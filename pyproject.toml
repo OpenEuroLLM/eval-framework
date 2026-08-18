@@ -1,0 +1,174 @@
+[project]
+name = "eval-framework"
+version = "0.10.5"
+description = "Evaluation Framework"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.12,<3.15"
+authors = [
+  { name = "Aleph Alpha Research" }
+]
+classifiers = [
+  "Operating System :: OS Independent",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Software Development :: Libraries",
+  "Typing :: Typed",
+]
+dependencies = [
+  "pyyaml>=6.0.3,<7",
+  "xmltodict>=1.0.4,<1.1",
+  "pydantic>=2.13.4,<3",
+  "datasets>=5.0.1,<6",
+  "pycountry>=26.2.16,<27",
+  "nltk>=3.10.3,<4",
+  "python-dotenv>=1.2.2,<2",
+  "lingua-language-detector>=2.2.0,<3",
+  "google-crc32c>=1.8.0,<2",
+  "langdetect>=1.0.9,<2", # required by the original ifeval implementation
+  "jsonschema>=4.26.0,<5",
+  "mysql-connector-python>=26.7.0,<27", # required for sql-related tasks
+  "psycopg2-binary>=2.9.12,<3", # required for sql-related tasks
+  "sympy>=1.14.0,<2",
+  "llm-sandbox[docker]==0.3.44",
+  "jsonlines>=4,<5",
+  "lxml>=6.1.1,<7",
+  "python-iso639>=2026.7.23",
+  "wandb>=0.28.2,<1",
+  "boto3>=1.43.72,<2",
+  "numpy>=2.5.2",
+  # is a dependency of sympy, but not explicitly listed in the requirements.txt
+  # https://github.com/sympy/sympy/blob/0204fa34e8f6f6f8ccb4de01209be9a2345c9d6e/doc/src/contributing/dependencies.md?plain=1#L125
+  "antlr4-python3-runtime==4.11.0",
+  "scipy>=1.18.0,<2",  # required for the aggregation of pass@k metrics
+]
+
+[project.optional-dependencies]
+# Model-specific extras
+determined = [
+  "determined>=0.38.1,<0.39",
+  "tensorboard==2.21.0"
+]
+api = ["aleph-alpha-client>=11.5.1"]
+openai = [
+  "openai>=3.1.0,<4",
+  "tiktoken>=0.13.0,<1",
+  "transformers>=4.45.2,<5",
+]
+transformers = [
+  "transformers>=4.45.2,<5",
+  "torch>=2.13.0,<3",
+  "accelerate>=1.14.0,<2",
+]
+accelerate = ["accelerate"]
+
+
+# from template-formatting
+optional = [
+  "transformers>=4.45.2,<5",
+  "jinja2>=3.1.6,<4"
+]
+all = [
+  "eval_framework[determined,api,openai,transformers,accelerate,optional]"
+]
+
+[project.urls]
+repository = "https://github.com/Aleph-Alpha-Research/eval-framework"
+
+[project.scripts]
+eval_framework = "eval_framework.run:run"
+
+[dependency-groups]
+dev = [
+  "mypy>=2.3.1,<3",
+  "pytest>=9.1.1,<10",
+  "pytest-mock>=3.15.1",
+  "pytest-xdist>=3.8.0,<4",
+  "pytest-sugar>1.1,<2",
+  "types-pyyaml>=6.0.12.20260815,<7",
+  "types-python-dateutil>=2.9.0.20260807,<3",
+  "types-requests>=2.33.0.20260712,<3",
+  "plotly>=6.9.0,<7",
+  "ruff>=0.16.3",
+  "pip-licenses>=5.5.5",
+]
+flash-attn = [
+  "flash-attn>=2.8.3.post1,<2.9",
+  "torch"
+]
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.12.6"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = ["eval_framework", "template_formatting"]
+
+[tool.uv]
+override-dependencies = [
+  "requests>=2.32,<3",  # fix for determined
+]
+
+[tool.uv.extra-build-dependencies]
+# Build flash-attn with the same torch version as in the container. Details at:
+# https://docs.astral.sh/uv/concepts/projects/config/#augmenting-build-dependencies
+flash-attn = [{ requirement = "torch", match-runtime = true }]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E", # Pycodestyle Errors
+    "F", # Pyflakes
+    "UP", # Auto-upgrading of new Python features
+    "I", # Sort imports
+]
+
+[tool.ruff.lint.isort]
+# https://github.com/astral-sh/ruff-pre-commit/issues/121
+# https://github.com/astral-sh/ruff/issues/10519
+# wandb creates a folder called 'wandb' during local runs (not logged in)
+# this needs to be added to prevent isort from incorrectly sorting
+known-third-party = ["wandb"]
+
+[tool.ruff.lint.extend-per-file-ignores]
+"__init__.py" = ["F401"]
+# Prompt strings are too long for:
+"tests/tests_eval_framework/tasks/benchmarks/test_csqa_ellamind.py" = ["E501"]
+"tests/tests_eval_framework/tasks/benchmarks/test_gpqa_ellamind.py" = ["E501"]
+"tests/tests_eval_framework/tasks/benchmarks/test_gsm8k_ellamind.py" = ["E501"]
+"tests/tests_eval_framework/tasks/benchmarks/test_hendrycks_math_ellamind.py" = ["E501"]
+"tests/tests_eval_framework/tasks/benchmarks/test_hle_ellamind.py" = ["E501"]
+"tests/tests_eval_framework/tasks/benchmarks/test_mbpp_ellamind.py" = ["E501"]
+"tests/tests_eval_framework/tasks/benchmarks/test_piqa_ellamind.py" = ["E501"]
+"tests/tests_eval_framework/tasks/benchmarks/test_siqa_ellamind.py" = ["E501"]
+"tests/tests_eval_framework/tasks/benchmarks/test_winogrande_ellamind.py" = ["E501"]
+
+[tool.mypy]
+plugins = "pydantic.mypy"
+disallow_untyped_defs = true
+ignore_missing_imports = true
+files = ["src", "utils"]
+
+[tool.pytest.ini_options]
+testpaths = ["./tests"]
+minversion = 8.0
+addopts = "-p 'no:legacypath' --doctest-modules -n auto"
+markers = [
+    "gpu: needs a GPU runner, otherwise test can not be run",
+    "cpu_slow: runs for a long time (on CPU)",
+    "slow_download: smoke tests that download large datasets (>15s); excluded from CI, run manually with -m slow_download",
+    "external_api: needs external services for execution",
+    "formatter_hash: formatter consistency tests using hash comparisons",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:datasets.utils._dill:",
+]
+env = [
+    "WANDB_MODE = disabled",
+]

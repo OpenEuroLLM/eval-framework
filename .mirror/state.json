@@ -1,5 +1,5 @@
 {
-  "commit": null,
-  "tag": null,
+  "commit": "8d16fae297e82f597e8378ae30f66e417ff6b45c",
+  "tag": "v0.10.5",
   "upstream_repo": "Aleph-Alpha-Research/eval-framework"
 }

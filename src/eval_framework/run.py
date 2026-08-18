@@ -1,0 +1,381 @@
+import argparse
+import datetime
+import logging
+from pathlib import Path
+from typing import Any
+
+try:
+    from eval_framework.context.determined import DeterminedContext
+except ImportError:
+    DeterminedContext = None  # type: ignore
+
+
+from eval_framework.context.local import LocalContext
+from eval_framework.main import main
+from eval_framework.tasks.task_loader import load_extra_tasks
+from eval_framework.tasks.utils import close_pools
+from eval_framework.utils.logging import setup_logging
+
+logger = logging.getLogger(__name__)
+
+CONTEXT = {
+    "local": LocalContext,
+    "determined": DeterminedContext,
+}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--context",
+        type=str,
+        required=False,
+        default="local",
+        choices=["local", "determined"],
+        help="The context in which the evaluation is run.",
+    )
+    parser.add_argument(
+        "--models",
+        type=Path,
+        required=False,
+        default=Path(__file__).parent / "llm" / "models.py",
+        help="The path to the Python module file containing model classes.",
+    )
+    parser.add_argument(
+        "--extra-tasks-dir",
+        type=Path,
+        default=None,
+        required=False,
+        help="Directory containing additional task plugin modules to load.",
+    )
+    parser.add_argument(
+        "--llm-name",
+        type=str,
+        required=False,
+        help=(
+            "Either a full import path for a model (e.g., `eval_framework.llm.huggingface.HFLLM`) or the "
+            "name of a class derived from `eval_framework.llm.base.BaseLLM` that can be found in the "
+            "models file. The resulting model is instantiated with the arguments provided via `--llm-args`."
+        ),
+    )
+    parser.add_argument(
+        "--llm-args",
+        type=str,
+        nargs="+",
+        default=(),
+        required=False,
+        help="The arguments to pass to the LLM as key=value pairs.",
+    )
+    parser.add_argument(
+        "--num-samples", type=int, required=False, help="The number of samples per subject to evaluate."
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        required=False,
+        help="The maximum number of tokens to generate for each sample. Overwrites any task default value.",
+    )
+    parser.add_argument(
+        "--num-fewshot", type=int, required=False, default=0, help="The number of fewshot examples to use."
+    )
+    parser.add_argument(
+        "--repeats",
+        type=int,
+        required=False,
+        default=1,
+        help="The number of times to repeat each sample in the evaluation.",
+    )
+    parser.add_argument("--task-name", type=str, required=False, help="The name of the task to evaluate.")
+    parser.add_argument(
+        "--task-suite",
+        type=Path,
+        required=False,
+        default=None,
+        help=(
+            "Path to a task suite definition file (.yaml or .py). "
+            "Mutually exclusive with --task-name. Runs all tasks defined in the suite."
+        ),
+    )
+    parser.add_argument(
+        "--randomize-judge-order",
+        action="store_true",
+        help="Randomize the order of answers presented to the LLM judge to mitigate position bias.",
+    )
+
+    parser.add_argument(
+        "--task-subjects",
+        type=str,
+        nargs="+",
+        required=False,
+        help=(
+            "The subjects of the task to evaluate. If empty, all subjects are evaluated. Subjects in the form of "
+            "tuples can be specified in a comma-delimited way, possibly using wildcard * in some dimensions of a "
+            "tuple, e.g., 'DE_DE, *' or 'FR_FR, astronomy'."
+        ),
+    )
+    parser.add_argument(
+        "--hf-revision",
+        type=str,
+        required=False,
+        default=None,
+        help="A tag name, a branch name, or commit hash for the task HF dataset.",
+    )
+    parser.add_argument(
+        "--user-prompt-suffix",
+        type=str,
+        required=False,
+        default=None,
+        help="Text appended verbatim to the evaluated user prompt before formatting.",
+    )
+    parser.add_argument(
+        "--judge-models",
+        type=Path,
+        required=False,
+        help="The path to the Python module file containing LLM judge model classes.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default="outputs",
+        required=False,
+        help="The path for the evaluation outputs.",
+    )
+    parser.add_argument(
+        "--hf-upload-repo",
+        type=str,
+        default="Aleph-Alpha/evaluation-results",
+        required=False,
+        help="Customizable path for the HuggingFace git repository where runs will be stored.",
+    )
+    parser.add_argument(
+        "--hf-upload-dir",
+        type=str,
+        default="",
+        required=False,
+        help="Folder name for the HuggingFace git repository where runs will be stored.",
+    )
+    parser.add_argument(
+        "--wandb-project",
+        type=str,
+        default=None,
+        required=False,
+        help=(
+            "The name of the Weights & Biases project to log runs to. "
+            "The environment variable WANDB_API_KEY must be set."
+        ),
+    )
+    parser.add_argument(
+        "--wandb-entity",
+        type=str,
+        default=None,
+        required=False,
+        help="The name of the Weights & Biases entity to log runs to. Defaults to the user's default entity.",
+    )
+    parser.add_argument(
+        "--wandb-run-id",
+        type=str,
+        default=None,
+        required=False,
+        help=(
+            "The ID of an existing Weights & Biases run to resume. "
+            "If not given, creates a new run. If given and exists, "
+            "will continue the run but will overwrite the Python command logged in wandb."
+        ),
+    )
+    parser.add_argument(
+        "--wandb-upload-results",
+        action=argparse.BooleanOptionalAction,
+        required=False,
+        default=True,
+        help=("Whether to upload results as an artifact to Weights & Biases (default: True). Needs `--wandb-project`."),
+    )
+    parser.add_argument(
+        "--description",
+        type=str,
+        required=False,
+        help="Description of the run. This will be added to the metadata of the run to help with bookkeeping.",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=1,
+        required=False,
+        help=(
+            "Size of batch of samples to send to the LLM for evaluation in parallel. "
+            "Use 1 for sequential running (default)."
+        ),
+    )
+    parser.add_argument(
+        "--save-logs",
+        action="store_true",
+        default=True,
+        required=False,
+        help="Whether to save logs to a file in the output directory (default: True).",
+    )
+
+    parser.add_argument(
+        "--judge-model-name",
+        type=str,
+        required=False,
+        help=(
+            "Either a full import path for a judge (e.g., `eval_framework.llm.huggingface.HFLLM`) or the "
+            "name of a class derived from `eval_framework.llm.base.BaseLLM` that can be found in the "
+            "models file. The resulting judge model is instantiated with the arguments provided via "
+            "`--judge-model-args`."
+        ),
+    )
+    parser.add_argument(
+        "--judge-model-args",
+        type=str,
+        required=False,
+        nargs="+",
+        default=(),
+        help="The args of the judge model used.",
+    )
+    parser.add_argument(
+        "--resource-cleanup",
+        action="store_true",
+        required=False,
+        default=False,
+        help=("Add this flag to free up GPU resources between response generation and evaluation"),
+    )
+    parser.add_argument(
+        "--delete-output-dir-after-upload",
+        action="store_true",
+        required=False,
+        default=False,
+        help=("Add this flag to remove the output directory after a successful upload to HF or WandB."),
+    )
+    parser.add_argument(
+        "-v",
+        "--verbosity",
+        type=int,
+        nargs="?",
+        default=1,
+        choices=[0, 1, 2],
+        help="Set the logging verbosity level: 0=critical, 1=info, 2=debug",
+    )
+
+    llm_args: dict[str, Any] = {}
+    args = parser.parse_args()
+
+    for arg in args.llm_args:
+        if "=" in arg:
+            key, value = arg.split("=", 1)
+
+            # Handle nested keys like "sampling_params.temperature=0.7"
+            if "." in key:
+                nested_key, sub_key = key.split(".", 1)
+                if nested_key not in llm_args:
+                    llm_args[nested_key] = {}
+                llm_args[nested_key][sub_key] = value
+            else:
+                llm_args[key] = value
+
+    args.llm_args = llm_args
+
+    judge_model_args = {}
+    for arg in args.judge_model_args:
+        if "=" in arg:
+            key, value = arg.split("=", 1)
+            judge_model_args[key] = value
+
+    args.judge_model_args = judge_model_args
+
+    if args.task_suite and args.task_name:
+        parser.error("--task-suite and --task-name are mutually exclusive.")
+
+    return args
+
+
+def _run_single_task(kwargs: dict) -> None:
+    # Setup logging for the output directory
+    output_dir = kwargs.get("output_dir", "results")
+    log_level = kwargs.get("verbosity", 1)
+    setup_logging(output_dir, log_level=log_level)
+
+    logger.info(kwargs)
+
+    now = datetime.datetime.now()
+    logger.info(f"starting time: {now}")
+
+    if kwargs.get("extra_tasks_dir"):
+        load_extra_tasks(kwargs["extra_tasks_dir"])
+
+    context_name = kwargs.pop("context")
+
+    context = CONTEXT[context_name](
+        llm_name=kwargs["llm_name"],
+        models_path=kwargs["models"],
+        num_samples=kwargs["num_samples"],
+        max_tokens=kwargs["max_tokens"],
+        num_fewshot=kwargs["num_fewshot"],
+        repeats=kwargs["repeats"],
+        task_name=kwargs["task_name"],
+        task_subjects=kwargs["task_subjects"],
+        hf_revision=kwargs["hf_revision"],
+        user_prompt_suffix=kwargs.get("user_prompt_suffix"),
+        output_dir=kwargs["output_dir"],
+        wandb_project=kwargs["wandb_project"],
+        wandb_entity=kwargs["wandb_entity"],
+        wandb_run_id=kwargs["wandb_run_id"],
+        wandb_group=kwargs.get("wandb_group"),
+        wandb_upload_results=kwargs["wandb_upload_results"],
+        hf_upload_dir=kwargs["hf_upload_dir"],
+        hf_upload_repo=kwargs["hf_upload_repo"],
+        llm_args=kwargs["llm_args"],
+        judge_models_path=kwargs["judge_models"],
+        judge_model_name=kwargs["judge_model_name"],
+        judge_model_args=kwargs["judge_model_args"],
+        batch_size=kwargs["batch_size"],
+        description=kwargs["description"],
+        randomize_judge_order=kwargs["randomize_judge_order"],
+        delete_output_dir_after_upload=kwargs["delete_output_dir_after_upload"],
+        # save_logs=kwargs["save_logs"],
+    )
+
+    with context as ctx:
+        if ctx.config is None:
+            raise ValueError(f"Context configuration is not set for '{type(ctx)}'.")
+
+        main(
+            llm=ctx.config.llm_class(**ctx.config.llm_args),
+            config=ctx.config,
+            should_preempt_callable=ctx.should_preempt,
+            trial_id=ctx.get_trial_id(),
+            resource_cleanup=kwargs.pop("resource_cleanup", False),
+            verbosity=log_level,
+        )
+
+    logger.info(f"time since start: {datetime.datetime.now() - now}")
+
+
+def run_with_kwargs(kwargs: dict) -> None:
+    task_suite_path = kwargs.pop("task_suite", None)
+
+    try:
+        if task_suite_path is not None:
+            from eval_framework.suite import TaskSuite, run_suite
+
+            output_dir = kwargs.get("output_dir", "outputs")
+            log_level = kwargs.get("verbosity", 1)
+            setup_logging(output_dir, log_level=log_level)
+
+            suite = TaskSuite.load(task_suite_path)
+            logger.info(f"Loaded task suite '{suite.name}' from {task_suite_path}")
+            result = run_suite(suite, kwargs)
+            logger.info(f"Suite '{suite.name}' completed. Aggregates: {result.aggregates}")
+        else:
+            _run_single_task(kwargs)
+    finally:
+        close_pools()
+
+
+def run() -> None:
+    run_with_kwargs(vars(parse_args()))
+
+
+# Enable execution via `python -m eval_framework.run`. Useful for
+# debugging via `debugpy -m eval_framework.run`
+if __name__ == "__main__":
+    run()

@@ -1,0 +1,205 @@
+import glob
+import importlib
+import importlib.metadata
+from argparse import Namespace
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+from eval_framework.context.local import _load_model as _load_model_orig
+from eval_framework.run import run
+from tests.tests_eval_framework.conftest import MockLLM
+
+
+def _load_model_mock(llm_name: str, models_path, *, info: str = ""):
+    """Return MockLLM for SmolLM135M/Smollm135MInstruct to avoid downloading real models.
+    Use a subclass with the same __name__ as the requested class so output paths match
+    the test assertions (which use llm_name, i.e. the class name)."""
+    clazz = _load_model_orig(llm_name, models_path, info=info)
+    if clazz.__name__ in ("SmolLM135M", "Smollm135MInstruct"):
+        return type(clazz.__name__, (MockLLM,), {})
+    return clazz
+
+
+@patch("argparse.ArgumentParser.parse_args")
+@patch("eval_framework.context.local._load_model", side_effect=_load_model_mock)
+def test_run(
+    _mock_load_model: Mock,
+    mock_parse_args: Mock,
+    tmp_path: Path,
+) -> None:
+    version_str = f"v{importlib.metadata.version('eval_framework')}"
+    task_name = "ARC"
+    llm_name = "SmolLM135M"
+    mock_parse_args.return_value = Namespace(
+        context="local",
+        models=Path(__file__).parent / "conftest.py",
+        llm_name=llm_name,
+        num_samples=4,
+        max_tokens=None,
+        num_fewshot=0,
+        task_name=task_name,
+        hf_revision=None,
+        wandb_project="test-project",
+        wandb_entity="test-entity",
+        wandb_run_id="test-run",
+        wandb_upload_results=True,
+        output_dir=tmp_path,
+        hf_upload_dir="",
+        hf_upload_repo="",
+        llm_args=[],
+        judge_models=Path(__file__).parent / "conftest.py",
+        judge_model_name="Smollm135MInstruct",
+        judge_model_args={},
+        batch_size=2,
+        task_subjects=None,
+        description="",
+        extra_tasks_dir=None,
+        save_logs=True,
+        resource_cleanup=True,
+        delete_output_dir_after_upload=False,
+        randomize_judge_order=False,
+        repeats=1,
+        task_suite=None,
+    )
+
+    run()
+
+    results_path = str(tmp_path / llm_name / f"{version_str}_{task_name}" / "*" / "results.jsonl")
+    results_files = glob.glob(results_path)
+    assert len(results_files) == 1
+
+
+@patch("argparse.ArgumentParser.parse_args")
+@patch("eval_framework.context.local._load_model", side_effect=_load_model_mock)
+def test_run_path(
+    _mock_load_model: Mock,
+    mock_parse_args: Mock,
+    tmp_path: Path,
+) -> None:
+    version_str = f"v{importlib.metadata.version('eval_framework')}"
+    task_name = "ARC"
+    module = "tests.tests_eval_framework.conftest"
+    llm_name = "SmolLM135M"
+    mock_parse_args.return_value = Namespace(
+        context="local",
+        models=None,
+        llm_name=f"{module}.{llm_name}",
+        num_samples=4,
+        max_tokens=None,
+        num_fewshot=0,
+        task_name=task_name,
+        hf_revision=None,
+        wandb_project="test-project",
+        wandb_entity="test-entity",
+        wandb_run_id="test-run",
+        wandb_upload_results=True,
+        output_dir=tmp_path,
+        hf_upload_dir="",
+        hf_upload_repo="",
+        llm_args=[],
+        judge_models=Path(__file__).parent / "conftest.py",
+        judge_model_name="tests.tests_eval_framework.conftest.Smollm135MInstruct",
+        judge_model_args={},
+        batch_size=2,
+        task_subjects=None,
+        description="",
+        extra_tasks_dir=None,
+        save_logs=True,
+        delete_output_dir_after_upload=False,
+        randomize_judge_order=False,
+        repeats=1,
+        task_suite=None,
+    )
+
+    run()
+
+    results_path = str(tmp_path / llm_name / f"{version_str}_{task_name}" / "*" / "results.jsonl")
+    results_files = glob.glob(results_path)
+    assert len(results_files) == 1
+
+
+@patch("argparse.ArgumentParser.parse_args")
+def test_run_no_judge_model(mock_parse_args: Mock, tmp_path: Path) -> None:
+    version_str = f"v{importlib.metadata.version('eval_framework')}"
+    task_name = "ARC"
+    llm_name = "SmolLM135M"
+    mock_parse_args.return_value = Namespace(
+        context="local",
+        models=Path(__file__).parent / "conftest.py",
+        llm_name=llm_name,
+        num_samples=4,
+        max_tokens=None,
+        num_fewshot=0,
+        task_name=task_name,
+        hf_revision=None,
+        output_dir=tmp_path,
+        wandb_project="test-project",
+        wandb_entity="test-entity",
+        wandb_run_id="test-run",
+        wandb_upload_results=True,
+        hf_upload_dir="",
+        hf_upload_repo="",
+        llm_args=[],
+        judge_models=None,
+        judge_model_name=None,
+        judge_model_args={},
+        batch_size=2,
+        task_subjects=None,
+        description="",
+        extra_tasks_dir=None,
+        save_logs=True,
+        delete_output_dir_after_upload=False,
+        randomize_judge_order=False,
+        repeats=1,
+        task_suite=None,
+    )
+
+    run()
+
+    results_path = str(tmp_path / llm_name / f"{version_str}_{task_name}" / "*" / "results.jsonl")
+    results_files = glob.glob(results_path)
+    assert len(results_files) == 1
+
+
+@patch("argparse.ArgumentParser.parse_args")
+def test_run_path_no_judge_model(mock_parse_args: Mock, tmp_path: Path) -> None:
+    version_str = f"v{importlib.metadata.version('eval_framework')}"
+    task_name = "ARC"
+    module = "tests.tests_eval_framework.conftest"
+    llm_name = "SmolLM135M"
+    mock_parse_args.return_value = Namespace(
+        context="local",
+        models=None,
+        llm_name=f"{module}.{llm_name}",
+        num_samples=4,
+        max_tokens=None,
+        num_fewshot=0,
+        task_name=task_name,
+        hf_revision=None,
+        output_dir=tmp_path,
+        wandb_project="test-project",
+        wandb_entity="test-entity",
+        wandb_run_id="test-run",
+        wandb_upload_results=True,
+        hf_upload_dir="",
+        hf_upload_repo="",
+        llm_args=[],
+        judge_models=None,
+        judge_model_name=None,
+        judge_model_args={},
+        batch_size=2,
+        task_subjects=None,
+        description="",
+        extra_tasks_dir=None,
+        save_logs=True,
+        delete_output_dir_after_upload=False,
+        randomize_judge_order=False,
+        repeats=1,
+        task_suite=None,
+    )
+
+    run()
+
+    results_path = str(tmp_path / llm_name / f"{version_str}_{task_name}" / "*" / "results.jsonl")
+    results_files = glob.glob(results_path)
+    assert len(results_files) == 1

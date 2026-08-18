@@ -1,0 +1,63 @@
+import traceback
+from abc import ABC, abstractmethod
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict
+
+from eval_framework.metrics.aggregators.aggregators import Aggregator
+from eval_framework.shared.types import Error
+from eval_framework.tasks.utils import raise_errors
+
+
+class MetricResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    metric_name: str
+    value: float | None
+    higher_is_better: bool
+    llm_judge_prompt: str | None = None
+    llm_judge_response: str | None = None
+    code_execution_trace: str | None = None
+    error: Error | None = None
+
+
+class classproperty:
+    def __init__(self, method: Any) -> None:
+        self.method = method
+
+    def __get__(self, instance: Any, cls: Any) -> Any:
+        return self.method(cls)
+
+
+class BaseMetric[Response](ABC):
+    NAME: str
+    KEYS: list[str] | None = None
+    # The aggregator determines how to aggregate the results of a metric for a single
+    # sample over multiple runs (LLM calls). We default to averaging and thus making
+    # macro averaging the overall computation default.
+    AGGREGATORS: list[Aggregator] = []
+    # Set by the evaluation generator before calculate(); controls how infra failures are handled.
+    fail_on_error: bool = True
+
+    @classproperty
+    def NAMES(cls) -> list[str]:
+        if cls.KEYS is None:
+            return [cls.NAME]
+        return [f"{cls.NAME}/{k}" for k in cls.KEYS]
+
+    @abstractmethod
+    def calculate(self, response: Response) -> list[MetricResult]:
+        raise NotImplementedError
+
+    def _record_or_raise(self, exc: Exception) -> list[MetricResult]:
+        """Infra failure (e.g. a Docker image-pull rate limit): abort when fail_on_error is set,
+        otherwise record a per-sample error so the run continues."""
+        if raise_errors() or self.fail_on_error:
+            raise exc
+        return [
+            MetricResult(
+                metric_name=self.NAME,
+                value=None,
+                higher_is_better=True,
+                error=Error(error_class=exc.__class__.__name__, message=str(exc), traceback=traceback.format_exc()),
+            )
+        ]
