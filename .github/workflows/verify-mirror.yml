@@ -1,0 +1,81 @@
+name: Verify mirror
+
+# The only CI this repository runs. It downloads the recorded upstream release,
+# re-materialises it, and asserts the result is byte-identical to what is
+# committed here.
+#
+# It does not install, import, build or execute the mirrored code, and it does
+# not run any upstream test suite, linter or workflow. It reads files and
+# compares bytes.
+#
+# Secrets: none. Token is read-only.
+
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  push:
+    branches: ["**"]
+    tags-ignore: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REPO: Aleph-Alpha-Research/eval-framework
+
+jobs:
+  in-sync:
+    name: Content matches recorded upstream tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the mirror
+        uses: actions/checkout@v4
+
+      - name: Re-materialise the recorded upstream tag
+        run: |
+          set -euo pipefail
+          TAG="$(python3 -c 'import json; print(json.load(open(".mirror/state.json")).get("tag") or "")')"
+          if [ -z "$TAG" ]; then
+            echo "::error::.mirror/state.json records no tag. Run the sync workflow first."
+            exit 1
+          fi
+          echo "Recorded upstream tag: $TAG"
+          .mirror/sync.sh "$TAG"
+
+      - name: Assert no drift
+        # Any difference fails the build, whether it is a local edit to the
+        # mirrored tree or upstream having force-moved the release tag (which
+        # shows up as a changed commit hash in .mirror/state.json).
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::Mirror does not match ${UPSTREAM_REPO} at the recorded tag."
+            git --no-pager diff --stat || true
+            git status --porcelain
+            exit 1
+          fi
+          echo "Mirror is byte-identical to upstream at the recorded tag." \
+            >> "$GITHUB_STEP_SUMMARY"
+
+  release-lag:
+    name: Mirror is on the latest upstream release
+    runs-on: ubuntu-latest
+    # Informational: warns rather than fails, because there is legitimately a
+    # window between an upstream release and the next nightly sync. Change to
+    # `exit 1` if you would rather this go red.
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          LATEST="$(gh api "repos/${UPSTREAM_REPO}/releases/latest" --jq .tag_name)"
+          HAVE="$(python3 -c 'import json; print(json.load(open(".mirror/state.json")).get("tag") or "none")')"
+          if [ "$LATEST" != "$HAVE" ]; then
+            echo "::warning::Mirror is at ${HAVE}; latest upstream release is ${LATEST}."
+            echo "Mirror at \`${HAVE}\`, upstream latest \`${LATEST}\`." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Up to date at \`${HAVE}\`." >> "$GITHUB_STEP_SUMMARY"
+          fi
