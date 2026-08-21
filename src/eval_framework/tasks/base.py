@@ -3,7 +3,7 @@ import os
 import random
 import traceback
 import typing
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, TypeVar
@@ -21,7 +21,7 @@ from eval_framework.metrics.efficiency.token_counters import TokenCounts
 from eval_framework.shared.types import BaseMetricContext, Completion, Error, RawCompletion
 from eval_framework.tasks.dataset_revisions import pinned_revision
 from eval_framework.tasks.markdown_doc import markdown_doc as render_markdown_doc
-from eval_framework.tasks.task import EvalFactory, ResponseType, Sample, Task
+from eval_framework.tasks.task import Benchmark, Eval, ResponseType, Sample
 from eval_framework.tasks.utils import classproperty, raise_errors
 from template_formatting.formatter import BaseFormatter, Message, Role
 
@@ -78,7 +78,7 @@ SubjectType = TypeVar("SubjectType")
 logger = logging.getLogger(__name__)
 
 
-class BaseTask[SubjectType](Task):
+class BaseTask[SubjectType](Eval):
     NAME: str
     DATASET_PATH: str
     SAMPLE_SPLIT: str
@@ -537,14 +537,70 @@ def resolve_overwrite_subjects[SubjectType](
     return chosen_subjects
 
 
-class Eager(EvalFactory):
-    """Wraps an already-imported task class."""
+class Eager(Benchmark):
+    """A ``Benchmark`` assembled from precomputed metadata and eval/doc callables."""
 
-    def __init__(self, task: type[BaseTask]) -> None:
-        self._task = task
+    def __init__(
+        self,
+        *,
+        id: str,
+        display_name: str,
+        subjects: list[Any],
+        metrics: list[type["BaseMetric"]],
+        response_type: ResponseType,
+        make_eval: Callable[..., Eval],
+        generate_markdown_doc: Callable[[Sequence[BaseFormatter]], str],
+    ) -> None:
+        self._id = id
+        self._display_name = display_name
+        self._subjects = subjects
+        self._metrics = metrics
+        self._response_type = response_type
+        self._make_eval = make_eval
+        self._generate_markdown_doc = generate_markdown_doc
+
+    @classmethod
+    def from_base_task(cls, task: type[BaseTask]) -> Self:
+        """Build an ``Eager`` from a task class, deriving its metadata from the class."""
+
+        def make_eval(
+            num_fewshot: int,
+            custom_subjects: list[str] | None,
+            custom_hf_revision: str | None,
+            user_prompt_suffix: str | None = None,
+            seed: int | None = None,
+        ) -> Eval:
+            return task.with_overwrite(
+                num_fewshot=num_fewshot,
+                custom_subjects=custom_subjects,
+                custom_hf_revision=custom_hf_revision,
+                user_prompt_suffix=user_prompt_suffix,
+                seed=seed,
+            )
+
+        def generate_markdown_doc(formatters: Sequence[BaseFormatter]) -> str:
+            try:
+                instance = task.with_overwrite(
+                    num_fewshot=1, custom_subjects=None, custom_hf_revision=None, seed=RANDOM_SEED
+                )
+            except (TypeError, ValueError, AssertionError):
+                instance = task.with_overwrite(
+                    num_fewshot=0, custom_subjects=None, custom_hf_revision=None, seed=RANDOM_SEED
+                )
+            return instance.markdown_doc(formatters)
+
+        return cls(
+            id=task.__name__,
+            display_name=task.NAME,
+            subjects=task.SUBJECTS,
+            metrics=task.get_metrics(),
+            response_type=task.get_response_type(),
+            make_eval=make_eval,
+            generate_markdown_doc=generate_markdown_doc,
+        )
 
     def id(self) -> str:
-        return self._task.__name__
+        return self._id
 
     def create(
         self,
@@ -553,34 +609,24 @@ class Eager(EvalFactory):
         custom_hf_revision: str | None,
         user_prompt_suffix: str | None = None,
         seed: int | None = None,
-    ) -> BaseTask:
-        return self._task.with_overwrite(
-            num_fewshot=num_fewshot,
-            custom_subjects=custom_subjects,
-            custom_hf_revision=custom_hf_revision,
-            user_prompt_suffix=user_prompt_suffix,
-            seed=seed,
-        )
+    ) -> Eval:
+        return self._make_eval(num_fewshot, custom_subjects, custom_hf_revision, user_prompt_suffix, seed)
 
     def response_type(self) -> ResponseType:
         """The eval's response type"""
-        return self._task.get_response_type()
+        return self._response_type
 
     def metrics(self) -> list[type["BaseMetric"]]:
         """The eval's metrics"""
-        return self._task.get_metrics()
+        return self._metrics
 
     def subjects(self) -> list[Any]:
         """The eval's subjects"""
-        return self._task.SUBJECTS
+        return self._subjects
 
     def display_name(self) -> str:
-        """The eval's human-readable display name (the task's ``NAME``)."""
-        return self._task.NAME
+        """The eval's human-readable display name."""
+        return self._display_name
 
     def markdown_doc(self, formatters: Sequence[BaseFormatter]) -> str:
-        try:
-            task = self.create(num_fewshot=1, custom_subjects=None, custom_hf_revision=None, seed=RANDOM_SEED)
-        except (TypeError, ValueError, AssertionError):
-            task = self.create(num_fewshot=0, custom_subjects=None, custom_hf_revision=None, seed=RANDOM_SEED)
-        return task.markdown_doc(formatters)
+        return self._generate_markdown_doc(formatters)
