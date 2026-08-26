@@ -8,7 +8,7 @@ from template_formatting.formatter import BaseFormatter, Message
 def markdown_doc(
     *,
     name: str,
-    dataset_path: str | None,
+    dataset_doc: str,
     sample_split: str | None,
     fewshot_split: str | None,
     response_type: str,
@@ -25,12 +25,11 @@ def markdown_doc(
     """Render a task's documentation as markdown"""
     buf = StringIO()
     buf.write(f"# {name}\n\n")
-    http_path = f"https://huggingface.co/datasets/{dataset_path}" if dataset_path else None
+
+    buf.write(f"## Dataset\n\n{dataset_doc}\n\n")
 
     buf.write("````\n")  # fence with 4 thicks because some prompts have code blocks with 3 thicks
     buf.write(f"NAME = {name}".strip() + "\n")
-    if dataset_path is not None:
-        buf.write(f"DATASET_PATH = {dataset_path}".strip() + "\n")
     if sample_split is not None:
         buf.write(f"SAMPLE_SPLIT = {sample_split}".strip() + "\n")
     if fewshot_split is not None:
@@ -43,10 +42,7 @@ def markdown_doc(
         buf.write(f"LANGUAGE = {language!r}".strip() + "\n")
     buf.write("````\n\n")
 
-    if http_path:
-        buf.write(f"- Link to dataset: [{http_path}]({http_path})\n")
-    else:
-        assert example_messages is not None, "a task without a dataset link must supply an example sample"
+    if example_messages is not None:
         for split, size in (split_sizes or {}).items():
             buf.write(f"- `{split}` has {size} samples\n\n")
 

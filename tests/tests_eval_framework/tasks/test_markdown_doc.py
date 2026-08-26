@@ -12,7 +12,7 @@ class ExampleFormatter:
 def test_markdown_doc_with_examples() -> None:
     doc = markdown_doc(
         name="MyTask",
-        dataset_path=None,
+        dataset_doc="No information about dataset",
         sample_split="test",
         fewshot_split="train",
         response_type="COMPLETION",
@@ -31,6 +31,10 @@ def test_markdown_doc_with_examples() -> None:
         doc
         == """\
 # MyTask
+
+## Dataset
+
+No information about dataset
 
 ````
 NAME = MyTask
@@ -67,10 +71,10 @@ SUBJECTS = ['no_subject']
     )
 
 
-def test_markdown_doc_with_dataset_link() -> None:
+def test_markdown_doc_inserts_dataset_section_verbatim() -> None:
     doc = markdown_doc(
         name="MyTask",
-        dataset_path="datasets/mytask",
+        dataset_doc="- line one\n- line two",
         sample_split="test",
         fewshot_split="train",
         response_type="COMPLETION",
@@ -79,10 +83,10 @@ def test_markdown_doc_with_dataset_link() -> None:
         language=None,
         num_fewshot=1,
         formatters=[ExampleFormatter()],
-        example_messages=[Message(role=Role.USER, content="Q")],
-        split_sizes={"test": 3, "train": 5},
-        possible_completions=["A", "B"],
-        ground_truth="A",
+        example_messages=None,
+        split_sizes=None,
+        possible_completions=None,
+        ground_truth=None,
     )
 
     assert (
@@ -90,9 +94,13 @@ def test_markdown_doc_with_dataset_link() -> None:
         == """\
 # MyTask
 
+## Dataset
+
+- line one
+- line two
+
 ````
 NAME = MyTask
-DATASET_PATH = datasets/mytask
 SAMPLE_SPLIT = test
 FEWSHOT_SPLIT = train
 RESPONSE_TYPE = COMPLETION
@@ -100,6 +108,5 @@ METRICS = [Accuracy, F1]
 SUBJECTS = ['no_subject']
 ````
 
-- Link to dataset: [https://huggingface.co/datasets/datasets/mytask](https://huggingface.co/datasets/datasets/mytask)
 """
     )
