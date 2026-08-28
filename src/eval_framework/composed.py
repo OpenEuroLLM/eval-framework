@@ -2,13 +2,12 @@ import logging
 import random
 import traceback
 import typing
-from abc import ABC, abstractmethod
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any, Self, final, override
 
 from datasets import DatasetDict
 
+from eval_framework.choices import ChoiceReader
 from eval_framework.contract import Benchmark, Eval, ResponseType, Sample
 from eval_framework.metrics.efficiency.bytes_per_sequence_position import (
     BytesCompletion,
@@ -18,13 +17,9 @@ from eval_framework.metrics.efficiency.bytes_per_sequence_position import (
 )
 from eval_framework.metrics.efficiency.token_counters import TokenCounts
 from eval_framework.shared.errors import raise_errors
-from eval_framework.shared.types import BaseMetricContext, Completion, Error, RawCompletion
-from eval_framework.tasks.base import (
-    NO_SUBJECT,
-    RANDOM_SEED,
-    Language,
-    resolve_overwrite_subjects,
-)
+from eval_framework.shared.types import Completion, Error, RawCompletion
+from eval_framework.subjects import Subjects, SubjectsSelector
+from eval_framework.tasks.base import RANDOM_SEED, Language
 from eval_framework.tasks.dataset_loading import DatasetLoader, DatasetPolicy
 from eval_framework.tasks.markdown_doc import markdown_doc as render_markdown_doc
 from template_formatting.formatter import BaseFormatter, Message, Role
@@ -40,48 +35,22 @@ logger = logging.getLogger(__name__)
 LanguageSpec = Language | dict[str, Language] | dict[str, tuple[Language, Language]] | None
 
 
-@dataclass(frozen=True)
-class ChoiceFields:
-    """The fields a choice-based styler needs out of a single dataset item.
-
-    ``choices`` and ``correct_index`` are produced together (a benchmark may shuffle the correct
-    answer in among distractors), so a reader yields them in one ``read`` rather than via separate
-    calls that would each have to re-derive the same shuffle.
-    """
-
-    raw_question: str
-    choices: list[str]
-    correct_index: int
-
-
-class ChoiceReader(ABC):
-    """Reads the fields a styler needs out of a raw dataset item.
-
-    Isolates dataset-schema knowledge here, so neither the eval nor the styler has to know the shape
-    of a benchmark's items.
-    """
-
-    @abstractmethod
-    def read(self, item: dict[str, Any]) -> ChoiceFields: ...
-
-
-class ComposedEval[SubjectType](Eval):
+@final
+class ComposedEval(Eval):
     def __init__(
         self,
         num_fewshot: int = 0,
         *,
-        id: str,
         display_name: str,
         reader: ChoiceReader,
         loader: DatasetLoader,
         styler: "TaskStyler",
         sample_split: str,
         fewshot_split: str,
-        subjects: list[SubjectType],
+        subjects: Subjects,
         language: LanguageSpec,
         rnd: random.Random,
     ) -> None:
-        self._id = id
         self._display_name = display_name
         self.num_fewshot = num_fewshot
         self.reader = reader
@@ -89,7 +58,7 @@ class ComposedEval[SubjectType](Eval):
         self.styler = styler
         self.sample_split = sample_split
         self.fewshot_split = fewshot_split
-        self.subjects = subjects
+        self._subjects = subjects
         self.language = language
         self.rnd = rnd
 
@@ -109,17 +78,12 @@ class ComposedEval[SubjectType](Eval):
 
         return dataset
 
-    def _load_dataset(self, subject: SubjectType) -> None:
-        # HF addresses configs by string name; NO_SUBJECT marks a dataset with no configs.
-        name = None if subject == NO_SUBJECT else str(subject)
-        hf_dataset = self.loader.load(name)
-        self.dataset = self._shuffle_splits(hf_dataset=hf_dataset)
+    def _load_dataset(self, load_key: str | None) -> dict[str, Any]:
+        hf_dataset = self.loader.load(load_key)
+        return self._shuffle_splits(hf_dataset=hf_dataset)
 
-    def post_process_generated_completion(self, completion_text: str, sample: Sample | None = None) -> str:
-        return completion_text
-
-    def _get_example_messages(self, item: dict[str, Any]) -> list[Message]:
-        fewshot_examples = self._sample_fewshot_examples(item) if self.num_fewshot > 0 else []
+    def _example_messages(self, item: dict[str, Any], fewshot_pool: list[dict]) -> list[Message]:
+        fewshot_examples = self._sample_fewshot_examples(item, fewshot_pool) if self.num_fewshot > 0 else []
 
         example_messages = []
         for fewshot_example in fewshot_examples:
@@ -130,59 +94,37 @@ class ComposedEval[SubjectType](Eval):
             )
         return example_messages
 
-    def _get_messages(self, item: dict[str, Any]) -> list[Message]:
-        example_messages = self._get_example_messages(item)
+    def _messages(self, item: dict[str, Any], fewshot_pool: list[dict]) -> list[Message]:
+        example_messages = self._example_messages(item, fewshot_pool)
         instruction_message = self._get_instruction_messages(item)
         cue_text = self._get_cue_text(item)
         cue_message = [Message(role=Role.ASSISTANT, content=cue_text)] if cue_text else []
-        messages = example_messages + instruction_message + cue_message
-        if initial_prompt_text := self._get_initial_prompt_text(item):
-            first_message = messages[0]
-            assert first_message.role == Role.USER
-            first_message.content = f"{initial_prompt_text}\n\n{first_message.content}"
-
-        if system_prompt_text := self._get_system_prompt_text(item):
-            return [Message(role=Role.SYSTEM, content=system_prompt_text)] + messages
-        return messages
+        return example_messages + instruction_message + cue_message
 
     def _get_instruction_messages(self, item: dict[str, Any]) -> list[Message]:
         return [Message(role=Role.USER, content=self._get_instruction_text(item))]
 
+    @override
     def iterate_samples(self, num_samples: int | None = None) -> Iterable[Sample]:
-        for subject in self.subjects:
-            self._load_dataset(subject)
-            assert len(self.dataset[self.sample_split]) > 0
-            done = False
-            index = 0
-            for item in self.dataset[self.sample_split]:
-                if done:
+        for subject in self._subjects:
+            dataset = self._load_dataset(subject.load_key)
+            fewshot_pool = dataset[self.fewshot_split] if self.num_fewshot > 0 else []
+            assert len(dataset[self.sample_split]) > 0
+            for index, item in enumerate(dataset[self.sample_split]):
+                if index == num_samples:
                     break
-                item["subject"] = subject
-                for sample in self._create_samples(item, index, str(subject)):
-                    yield sample
-                    index += 1
-                    if index == num_samples:
-                        done = True
-                        break
+                item["subject"] = subject.label
+                yield self._create_sample(item, index, subject.label, fewshot_pool)
 
-    def _create_samples(self, item: dict[str, Any], index: int, subject: str) -> list[Sample]:
-        """Creates one or more samples from a single dataset item. Default implementation returns single sample."""
-        return [
-            Sample(
-                id=index,
-                subject=str(subject),
-                messages=self._get_messages(item),
-                ground_truth=self._get_ground_truth(item),
-                possible_completions=self._get_possible_completions(item),
-                context=self._get_context(item),
-            )
-        ]
-
-    def _get_initial_prompt_text(self, item: dict[str, Any]) -> str:
-        return ""
-
-    def _get_system_prompt_text(self, item: dict[str, Any]) -> str | None:
-        return None
+    def _create_sample(self, item: dict[str, Any], index: int, subject: str, fewshot_pool: list[dict]) -> Sample:
+        return Sample(
+            id=index,
+            subject=str(subject),
+            messages=self._messages(item, fewshot_pool),
+            ground_truth=self._get_ground_truth(item),
+            possible_completions=self._get_possible_completions(item),
+            context=None,
+        )
 
     def _get_instruction_text(self, item: dict[str, Any]) -> str:
         fields = self.reader.read(item)
@@ -203,34 +145,33 @@ class ComposedEval[SubjectType](Eval):
         fields = self.reader.read(item)
         return self.styler.get_possible_completions(fields.choices, fields.correct_index)
 
-    def _sample_fewshot_examples(self, item: dict[str, Any]) -> list[dict]:
+    def _sample_fewshot_examples(self, item: dict[str, Any], fewshot_pool: list[dict]) -> list[dict]:
         if self.fewshot_split == self.sample_split:
             # If the fewshot and sample splits are the same, we risk including the current eval item
             # as a fewshot example (leaking the answer). To prevent this, sample one extra example,
             # remove the current item if present, and truncate back to num_fewshot.
-            fewshot_examples = self.rnd.sample(self.dataset[self.fewshot_split], self.num_fewshot + 1)
+            fewshot_examples = self.rnd.sample(fewshot_pool, self.num_fewshot + 1)
             fewshot_examples = [example for example in fewshot_examples if example != item]
             fewshot_examples = fewshot_examples[: self.num_fewshot]
             return fewshot_examples
         else:
             # Separate splits: no risk of leaking the current item, sample directly.
-            return self.rnd.sample(self.dataset[self.fewshot_split], self.num_fewshot)
+            return self.rnd.sample(fewshot_pool, self.num_fewshot)
 
-    def _get_context(self, item: dict[str, Any]) -> BaseMetricContext | list[BaseMetricContext] | None:
-        return None
-
+    @override
     def get_metadata(self) -> dict[str, str | list[str]]:
         meta: dict[str, str | list[str]] = {
             "sample_split": self.sample_split,
             "fewshot_split": self.fewshot_split,
             "response_type": self.get_response_type().value,
             "metrics": [m.NAME for m in self.styler.metrics],
-            "subjects": [str(s) for s in self.subjects],
+            "subjects": [s.label for s in self._subjects],
         }
         meta.update(self.loader.metadata())
         meta.update(self.styler.get_extra_metadata())
         return meta
 
+    @override
     def generate_completions(
         self,
         llm: "BaseLLM",
@@ -284,8 +225,7 @@ class ComposedEval[SubjectType](Eval):
 
             try:
                 error = None
-                model_post_processed_completion = llm.post_process_completion(raw_completion.completion, sample)
-                completion = self.post_process_generated_completion(model_post_processed_completion, sample)
+                completion = llm.post_process_completion(raw_completion.completion, sample)
             except Exception as e:
                 if raise_errors() or fail_on_error:
                     raise
@@ -305,18 +245,19 @@ class ComposedEval[SubjectType](Eval):
                     raw_completion=raw_completion.completion,
                     raw_completion_num_tokens=raw_completion.completion_num_tokens,
                     raw_completion_reasoning_num_tokens=raw_completion.reasoning_num_tokens,
+                    raw_completion_reasoning=raw_completion.reasoning,
+                    raw_completion_finish_reason=raw_completion.finish_reason,
                     context=sample.context,
                     error=raw_completion.raw_completion_error or error,
                 )
             )
         return completion_list
 
+    @override
     def get_response_type(self) -> ResponseType:
         return self.styler.response_type
 
-    def id(self) -> str:
-        return self._id
-
+    @override
     def display_name(self) -> str:
         return self._display_name
 
@@ -334,6 +275,7 @@ def _metrics_for(styler: "TaskStyler") -> list[type["BaseMetric"]]:
     return styler.metrics + response_type_metrics
 
 
+@final
 class ComposedBenchmark(Benchmark):
     """A ``Benchmark`` that builds a ``ComposedEval`` from an injected styler and dataset inputs."""
 
@@ -342,7 +284,7 @@ class ComposedBenchmark(Benchmark):
         *,
         id: str,
         display_name: str,
-        subjects: list[Any],
+        subjects: SubjectsSelector,
         styler: "TaskStyler",
         reader: ChoiceReader,
         sample_split: str,
@@ -369,7 +311,7 @@ class ComposedBenchmark(Benchmark):
         reader: ChoiceReader,
         sample_split: str,
         fewshot_split: str,
-        subjects: list[Any],
+        subjects: SubjectsSelector,
         dataset_policy: DatasetPolicy,
         language: LanguageSpec,
         display_name: str | None = None,
@@ -387,9 +329,11 @@ class ComposedBenchmark(Benchmark):
             dataset_policy=dataset_policy,
         )
 
+    @override
     def id(self) -> str:
         return self._id
 
+    @override
     def create(
         self,
         num_fewshot: int,
@@ -401,15 +345,12 @@ class ComposedBenchmark(Benchmark):
         # Composed evals have no completion path yet, so a completion-only user prompt suffix is rejected.
         if user_prompt_suffix is not None:
             raise ValueError("user_prompt_suffix is only supported for completion tasks.")
-        subjects = self._subjects
+        subjects = self._subjects.select(custom_subjects or [])
         if custom_subjects:
-            subjects = resolve_overwrite_subjects(
-                custom_subjects=custom_subjects, accepted_subjects=self._subjects, task_name=self._display_name
-            )
-            logger.info(f"Restricting subjects to `{subjects}` for the task {self._display_name}")
+            labels = [subject.label for subject in subjects]
+            logger.info(f"Restricting subjects to `{labels}` for the task {self._display_name}")
         return ComposedEval(
             num_fewshot=num_fewshot,
-            id=self._id,
             display_name=self._display_name,
             reader=self.reader,
             styler=self._styler,
@@ -421,38 +362,44 @@ class ComposedBenchmark(Benchmark):
             rnd=random.Random(seed),
         )
 
+    @override
     def response_type(self) -> ResponseType:
-        """The eval's response type"""
+        """The benchmark's response type"""
         return self._styler.response_type
 
+    @override
     def metrics(self) -> list[type["BaseMetric"]]:
-        """The eval's metrics"""
+        """The benchmark's metrics"""
         return _metrics_for(self._styler)
 
+    @override
     def subjects(self) -> list[Any]:
-        """The eval's subjects"""
-        return self._subjects
+        """The benchmark's subjects"""
+        return [subject.label for subject in self._subjects.select([])]
 
+    @override
     def display_name(self) -> str:
-        """The eval's human-readable display name."""
+        """The benchmark's human-readable display name."""
         return self._display_name
 
+    @override
     def markdown_doc(self, formatters: Sequence[BaseFormatter]) -> str:
         num_fewshot = 1
+        subjects = self._subjects.select([])
         instance = ComposedEval(
             num_fewshot=num_fewshot,
-            id=self._id,
             display_name=self._display_name,
             reader=self.reader,
             styler=self._styler,
             sample_split=self.sample_split,
             fewshot_split=self.fewshot_split,
-            subjects=self._subjects,
+            subjects=subjects,
             language=self.language,
             loader=self.dataset_policy.loader(None),
             rnd=random.Random(RANDOM_SEED),
         )
         sample = next(iter(instance.iterate_samples(1)))
+        dataset = instance._load_dataset(subjects[0].load_key)
         return render_markdown_doc(
             name=self._display_name,
             dataset_doc=self.dataset_policy.documentation(),
@@ -460,12 +407,12 @@ class ComposedBenchmark(Benchmark):
             fewshot_split=self.fewshot_split,
             response_type=self.response_type().name,
             metrics=[m.__name__ for m in self.metrics()],
-            subjects=self._subjects,
+            subjects=[subject.label for subject in subjects],
             language=self.language,
             num_fewshot=num_fewshot,
             formatters=formatters,
             example_messages=sample.messages,
-            split_sizes={split: len(instance.dataset[split]) for split in instance.dataset},
+            split_sizes={split: len(dataset[split]) for split in dataset},
             possible_completions=sample.possible_completions,
             ground_truth=sample.ground_truth,
         )

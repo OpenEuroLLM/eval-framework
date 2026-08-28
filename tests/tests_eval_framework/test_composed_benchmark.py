@@ -1,11 +1,12 @@
 import random
-from typing import Any
+from typing import Any, override
 from unittest.mock import patch
 
 import pytest
 from datasets import Dataset, DatasetDict
 
-from eval_framework.composed import ChoiceFields, ChoiceReader, ComposedBenchmark, ComposedEval, LanguageSpec
+from eval_framework.choices import ChoiceFields, ChoiceReader
+from eval_framework.composed import ComposedBenchmark, ComposedEval, LanguageSpec
 from eval_framework.contract import ResponseType
 from eval_framework.metrics.base import BaseMetric
 from eval_framework.metrics.efficiency.bytes_per_sequence_position import (
@@ -13,6 +14,7 @@ from eval_framework.metrics.efficiency.bytes_per_sequence_position import (
     SequencePositionsLoglikelihood,
 )
 from eval_framework.run import parse_args
+from eval_framework.subjects import ListOfSubjects, Subject, Subjects, SubjectsSelector
 from eval_framework.tasks.dataset_loading import DatasetLoader, DatasetPolicy
 from eval_framework.tasks.task_style import TaskStyle, TaskStyler
 from template_formatting.formatter import ConcatFormatter, Message, Role
@@ -22,6 +24,7 @@ class _DummyReader(ChoiceReader):
     """A dummy reader: passed only to satisfy construction for doubles that never read (they override
     the styling methods, or raise before styling)."""
 
+    @override
     def read(self, item: dict[str, Any]) -> ChoiceFields:
         return ChoiceFields(raw_question="", choices=[], correct_index=0)
 
@@ -29,9 +32,11 @@ class _DummyReader(ChoiceReader):
 class _DummyDatasetLoader(DatasetLoader):
     """A no-op loader for doubles that never load a dataset."""
 
+    @override
     def load(self, name: str | None) -> DatasetDict:
         return DatasetDict()
 
+    @override
     def metadata(self) -> dict[str, str]:
         return {}
 
@@ -39,9 +44,11 @@ class _DummyDatasetLoader(DatasetLoader):
 class _DummyDatasetPolicy(DatasetPolicy):
     """A no-op policy for benchmark doubles that never load a dataset."""
 
+    @override
     def loader(self, custom_hf_revision: str | None) -> DatasetLoader:
         return _DUMMY_LOADER
 
+    @override
     def documentation(self) -> str:
         return ""
 
@@ -50,7 +57,8 @@ _DUMMY_READER = _DummyReader()
 _DUMMY_LOADER = _DummyDatasetLoader()
 _DUMMY_RNG = random.Random(0)
 _DUMMY_SPLIT = "test"
-_DUMMY_SUBJECTS = ["subject"]
+_DUMMY_SELECTOR: SubjectsSelector = ListOfSubjects(["subject"])
+_DUMMY_EVAL_SUBJECTS: Subjects = (Subject(load_key="subject", label="subject"),)
 
 
 class _DummyStyler(TaskStyler):
@@ -62,15 +70,19 @@ class _DummyStyler(TaskStyler):
     task_style = TaskStyle.MULTIPLE_CHOICE
     question_prefix = ""
 
+    @override
     def get_instruction_text(self, raw_question: str, choices: list[str]) -> str:
         return ""
 
+    @override
     def get_ground_truth(self, choices: list[str], correct_index: int) -> str:
         return ""
 
+    @override
     def get_possible_completions(self, choices: list[str], correct_index: int | None = None) -> list[str] | None:
         return None
 
+    @override
     def get_cue_text(self) -> str:
         return ""
 
@@ -87,15 +99,19 @@ class _StubTaskStyler(TaskStyler):
     task_style = TaskStyle.MULTIPLE_CHOICE
     question_prefix = ""
 
+    @override
     def get_instruction_text(self, raw_question: str, choices: list[str]) -> str:
         return ""
 
+    @override
     def get_ground_truth(self, choices: list[str], correct_index: int) -> str:
         return ""
 
+    @override
     def get_possible_completions(self, choices: list[str], correct_index: int | None = None) -> list[str] | None:
         return None
 
+    @override
     def get_cue_text(self) -> str:
         return ""
 
@@ -108,7 +124,7 @@ def _make_benchmark(
     reader: ChoiceReader = _DUMMY_READER,
     sample_split: str = _DUMMY_SPLIT,
     fewshot_split: str = _DUMMY_SPLIT,
-    subjects: list[Any] = _DUMMY_SUBJECTS,
+    subjects: SubjectsSelector = _DUMMY_SELECTOR,
     dataset_policy: DatasetPolicy | None = None,
     language: LanguageSpec = None,
 ) -> ComposedBenchmark:
@@ -128,7 +144,6 @@ def _make_benchmark(
 
 def _make_eval(
     *,
-    id: str = "dummy-eval",
     display_name: str = "dummy-eval",
     num_fewshot: int = 0,
     reader: ChoiceReader = _DUMMY_READER,
@@ -136,14 +151,13 @@ def _make_eval(
     styler: TaskStyler | None = None,
     sample_split: str = _DUMMY_SPLIT,
     fewshot_split: str = _DUMMY_SPLIT,
-    subjects: list[Any] = _DUMMY_SUBJECTS,
+    subjects: Subjects = _DUMMY_EVAL_SUBJECTS,
     language: LanguageSpec = None,
     rnd: random.Random = _DUMMY_RNG,
 ) -> ComposedEval:
     """Build a ``ComposedEval`` for tests, defaulting to dummies for every argument the test does not provide."""
     return ComposedEval(
         num_fewshot,
-        id=id,
         display_name=display_name,
         reader=reader,
         loader=loader,
@@ -156,92 +170,26 @@ def _make_eval(
     )
 
 
-@pytest.mark.parametrize(
-    "subjects,custom_subjects,expected",
-    [
-        (["subject1", "subject2"], [], ["subject1", "subject2"]),
-        (["subject1", "subject2"], None, ["subject1", "subject2"]),
-        (["subject1", "subject2", "subject3"], ["subject1", "subject3"], ["subject1", "subject3"]),
-        # result follows SUBJECTS' declared order, not the CLI argument order, and dedupes repeats --
-        # matches come from `accepted_subjects`, not from echoing `custom_subjects` back verbatim.
-        (["subject1", "subject2", "subject3"], ["subject3", "subject1"], ["subject1", "subject3"]),
-        (["subject1", "subject2"], ["subject1", "subject1"], ["subject1"]),
-        # "*" matches any scalar subject too, consistent with "*" already being a wildcard position
-        # within a tuple subject. Redundant with custom_subjects=None/[] for the top-level case, but
-        # the matching function treats scalar and tuple subjects the same way, so this falls out for free.
-        (["subject1", "subject2", "subject3"], ["*"], ["subject1", "subject2", "subject3"]),
-        ([("EN_US", "topic1"), ("EN_US", "topic2"), ("DE_DE", "topic1")], ["EN_US,topic1"], [("EN_US", "topic1")]),
-        (
-            [("EN_US", "topic1"), ("EN_US", "topic2"), ("DE_DE", "topic1")],
-            ["EN_US,*"],
-            [("EN_US", "topic1"), ("EN_US", "topic2")],
-        ),
-        (
-            [
-                ("EN_US", "topic1", "subtopic1"),
-                ("EN_US", "topic1", "subtopic2"),
-                ("EN_US", "topic2", "subtopic1"),
-                ("DE_DE", "topic1", "subtopic1"),
-            ],
-            ["EN_US,topic1,*"],
-            [("EN_US", "topic1", "subtopic1"), ("EN_US", "topic1", "subtopic2")],
-        ),
-        (
-            [
-                ("EN_US", "topic1", "subtopic1"),
-                ("EN_US", "topic1", "subtopic2"),
-                ("EN_US", "topic2", "subtopic1"),
-                ("DE_DE", "topic1", "subtopic1"),
-            ],
-            ["*,topic1,*"],
-            [
-                ("EN_US", "topic1", "subtopic1"),
-                ("EN_US", "topic1", "subtopic2"),
-                ("DE_DE", "topic1", "subtopic1"),
-            ],
-        ),
-        (
-            [("EN_US", "topic1"), ("EN_US", "topic2"), ("DE_DE", "topic1")],
-            ["EN_US,topic1", "DE_DE,topic1"],
-            [("EN_US", "topic1"), ("DE_DE", "topic1")],
-        ),
-        # mixed-type tuple subjects, tuple[str, int, str]
-        (
-            [("ctx1", 4096, "single"), ("ctx1", 8192, "multi"), ("ctx2", 4096, "single")],
-            ["ctx1,4096,single"],
-            [("ctx1", 4096, "single")],
-        ),
-        (
-            [("ctx1", 4096, "single"), ("ctx1", 8192, "multi"), ("ctx2", 4096, "single")],
-            ["ctx1,*,*"],
-            [("ctx1", 4096, "single"), ("ctx1", 8192, "multi")],
-        ),
-    ],
-)
-def test_task_custom_subjects(
-    subjects: list[str] | list[tuple],
-    custom_subjects: list[str] | None,
-    expected: list[str] | list[tuple],
-) -> None:
-    # Filtering by custom subjects happens in create().
-    task = _make_benchmark(subjects=subjects).create(0, custom_subjects, None)
-    assert task.subjects == expected
+def test_create_forwards_custom_subjects_to_its_selector() -> None:
+    # Given a selector that records how create invokes it (selection itself is tested in test_subjects.py)
+    class _SpySelector(SubjectsSelector):
+        def __init__(self) -> None:
+            self.calls: list[list[str]] = []
 
+        @override
+        def select(self, tokens: list[str]) -> Subjects:
+            self.calls.append(tokens)
+            return (Subject(load_key=None, label="dummy"),)
 
-@pytest.mark.parametrize(
-    "subjects,custom_subjects",
-    [
-        (["subject1", "subject2"], ["invalid_subject"]),
-        ([("EN_US", "topic1"), ("EN_US", "topic2")], ["EN_US,invalid_topic"]),
-        ([("ctx1", 4096, "single"), ("ctx1", 8192, "multi")], ["ctx1,9999,single"]),
-        # matching compares stringified subject fields, not a parsed native value, so a non-numeric
-        # part at an int position is just another "not a legal value" case, not a separate parse error.
-        ([("ctx1", 4096, "single"), ("ctx1", 8192, "multi")], ["ctx1,abc,single"]),
-    ],
-)
-def test_task_custom_subjects_rejects_unknown(subjects: list[str] | list[tuple], custom_subjects: list[str]) -> None:
-    with pytest.raises(ValueError):
-        _make_benchmark(subjects=subjects).create(0, custom_subjects, None)
+    selector = _SpySelector()
+    benchmark = _make_benchmark(subjects=selector)
+
+    # When creating evals with a selection and without one
+    benchmark.create(0, ["b"], None)
+    benchmark.create(0, None, None)
+
+    # Then create forwards the tokens verbatim, mapping "no selection" to the empty (all) list
+    assert selector.calls == [["b"], []]
 
 
 def test_create_resolves_loader_through_policy_with_revision_override() -> None:
@@ -250,10 +198,12 @@ def test_create_resolves_loader_through_policy_with_revision_override() -> None:
         def __init__(self) -> None:
             self.calls: list[str | None] = []
 
+        @override
         def loader(self, custom_hf_revision: str | None) -> DatasetLoader:
             self.calls.append(custom_hf_revision)
             return _DUMMY_LOADER
 
+        @override
         def documentation(self) -> str:
             return ""
 
@@ -269,16 +219,20 @@ def test_create_resolves_loader_through_policy_with_revision_override() -> None:
 def test_markdown_doc_renders_policy_dataset_section_and_example() -> None:
     # Given a policy whose loader serves a fixture dataset (no network) and documents itself
     class _FixtureLoader(DatasetLoader):
+        @override
         def load(self, name: str | None) -> DatasetDict:
             return DatasetDict({_DUMMY_SPLIT: Dataset.from_list([{"x": 1}, {"x": 2}])})
 
+        @override
         def metadata(self) -> dict[str, str]:
             return {}
 
     class _FixturePolicy(DatasetPolicy):
+        @override
         def loader(self, custom_hf_revision: str | None) -> DatasetLoader:
             return _FixtureLoader()
 
+        @override
         def documentation(self) -> str:
             return "FIXTURE DATASET DOC"
 
@@ -295,12 +249,13 @@ def test_display_name_defaults_to_id() -> None:
     assert benchmark.display_name() == "the-id"
 
 
-def test_id_and_display_name_reach_the_eval() -> None:
+def test_id_stays_on_benchmark_display_name_reaches_eval() -> None:
     benchmark = _make_benchmark(id="the-id", display_name="Nice Name")
     assert (benchmark.id(), benchmark.display_name()) == ("the-id", "Nice Name")
 
+    # id is a Benchmark concept; only display_name reaches the eval
     task = benchmark.create(0, None, None)
-    assert (task.id(), task.display_name()) == ("the-id", "Nice Name")
+    assert task.display_name() == "Nice Name"
 
 
 def test_user_prompt_suffix_rejected() -> None:
@@ -325,9 +280,11 @@ def test_metrics_combine_styler_and_response_type_metrics() -> None:
 def test_get_metadata_reports_dataset_path_from_loader() -> None:
     # Given an eval whose loader reports a dataset path
     class _LoaderStub(DatasetLoader):
+        @override
         def load(self, name: str | None) -> DatasetDict:
             return DatasetDict()
 
+        @override
         def metadata(self) -> dict[str, str]:
             return {"dataset_path": "some/dataset"}
 
@@ -337,23 +294,37 @@ def test_get_metadata_reports_dataset_path_from_loader() -> None:
     assert task.get_metadata()["dataset_path"] == "some/dataset"
 
 
-def test_get_messages_assembles_instruction_and_cue() -> None:
-    # Given a reader that reads the question from item["question"], and a styler that echoes it + a cue
+def test_message_sampling() -> None:
+    # Given a reader that reads item["question"], a styler that echoes it + a cue,
     class _Reader(ChoiceReader):
+        @override
         def read(self, item: dict[str, Any]) -> ChoiceFields:
             return ChoiceFields(raw_question=item["question"], choices=[], correct_index=0)
 
     class _Styler(_DummyStyler):
+        @override
         def get_instruction_text(self, raw_question: str, choices: list[str]) -> str:
             return f"instruction: {raw_question}"
 
+        @override
         def get_cue_text(self) -> str:
             return "the cue"
 
-    task = _make_eval(reader=_Reader(), styler=_Styler())
+    # and a loader serving one row in the sample split
+    class _Loader(DatasetLoader):
+        @override
+        def load(self, name: str | None) -> DatasetDict:
+            return DatasetDict({_DUMMY_SPLIT: Dataset.from_list([{"question": "the goal"}])})
 
-    # Then the instruction becomes the evaluated USER turn and the cue an ASSISTANT turn
-    assert task._get_messages({"question": "the goal"}) == [
+        @override
+        def metadata(self) -> dict[str, str]:
+            return {}
+
+    task = _make_eval(reader=_Reader(), styler=_Styler(), loader=_Loader())
+
+    # When iterating samples, then the instruction is the evaluated USER turn and the cue the ASSISTANT turn
+    [sample] = list(task.iterate_samples())
+    assert sample.messages == [
         Message(role=Role.USER, content="instruction: the goal"),
         Message(role=Role.ASSISTANT, content="the cue"),
     ]

@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from eval_framework.tasks.benchmarks.piqa_ellamind import (
+from eval_framework.benchmarks.piqa_ellamind import (
     PIQA_ELLAMIND_BPB_STYLER,
     PIQA_ELLAMIND_CLOZE_STYLER,
     PIQA_ELLAMIND_MC_STYLER,
