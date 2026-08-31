@@ -1,6 +1,6 @@
 [project]
 name = "eval-framework"
-version = "0.11.2"
+version = "0.11.3"
 description = "Evaluation Framework"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -38,8 +38,8 @@ dependencies = [
   "jsonlines>=4,<5",
   "lxml>=6.1.2,<7",
   "python-iso639>=2026.7.23",
-  "wandb>=0.28.2,<1",
-  "boto3>=1.43.80,<2",
+  "wandb>=0.29.0,<1",
+  "boto3>=1.43.82,<2",
   "numpy>=2.5.2",
   # is a dependency of sympy, but not explicitly listed in the requirements.txt
   # https://github.com/sympy/sympy/blob/0204fa34e8f6f6f8ccb4de01209be9a2345c9d6e/doc/src/contributing/dependencies.md?plain=1#L125
@@ -55,7 +55,7 @@ determined = [
 ]
 api = ["aleph-alpha-client>=11.5.1"]
 openai = [
-  "openai>=3.3.1,<4",
+  "openai>=3.5.0,<4",
   "tiktoken>=0.14.0,<1",
   "transformers>=4.45.2,<5",
 ]
@@ -93,7 +93,7 @@ dev = [
   "types-python-dateutil>=2.9.0.20260807,<3",
   "types-requests>=2.33.0.20260712,<3",
   "plotly>=7.0.0,<8",
-  "ruff>=0.16.4",
+  "ruff>=0.16.5",
   "pip-licenses>=5.5.5",
 ]
 flash-attn = [
@@ -102,7 +102,7 @@ flash-attn = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.12.6,<0.12.7"]
+requires = ["uv_build>=0.12.7,<0.12.8"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
