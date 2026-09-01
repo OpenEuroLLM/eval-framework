@@ -1,6 +1,6 @@
 [project]
 name = "eval-framework"
-version = "0.11.3"
+version = "0.11.4"
 description = "Evaluation Framework"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -22,7 +22,7 @@ classifiers = [
 dependencies = [
   "pyyaml>=6.0.3,<7",
   "xmltodict>=1.0.4,<1.1",
-  "pydantic>=2.13.4,<3",
+  "pydantic>=2.13.5,<3",
   "datasets>=5.0.1,<6",
   "pycountry>=26.2.16,<27",
   "nltk>=3.10.3,<4",
@@ -39,7 +39,7 @@ dependencies = [
   "lxml>=6.1.2,<7",
   "python-iso639>=2026.7.23",
   "wandb>=0.29.0,<1",
-  "boto3>=1.43.82,<2",
+  "boto3>=1.43.83,<2",
   "numpy>=2.5.2",
   # is a dependency of sympy, but not explicitly listed in the requirements.txt
   # https://github.com/sympy/sympy/blob/0204fa34e8f6f6f8ccb4de01209be9a2345c9d6e/doc/src/contributing/dependencies.md?plain=1#L125
@@ -55,7 +55,7 @@ determined = [
 ]
 api = ["aleph-alpha-client>=11.5.1"]
 openai = [
-  "openai>=3.5.0,<4",
+  "openai>=3.6.0,<4",
   "tiktoken>=0.14.0,<1",
   "transformers>=4.45.2,<5",
 ]
