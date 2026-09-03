@@ -2,13 +2,13 @@ import logging
 import random
 import traceback
 import typing
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from typing import TYPE_CHECKING, Any, Self, final, override
 
 from datasets import DatasetDict
 
-from eval_framework.choices import ChoiceReader
 from eval_framework.contract import Benchmark, Eval, ResponseType, Sample
+from eval_framework.eval_kind import EvalKind
 from eval_framework.metrics.efficiency.bytes_per_sequence_position import (
     BytesCompletion,
     BytesLoglikelihood,
@@ -18,7 +18,7 @@ from eval_framework.metrics.efficiency.bytes_per_sequence_position import (
 from eval_framework.metrics.efficiency.token_counters import TokenCounts
 from eval_framework.shared.errors import raise_errors
 from eval_framework.shared.types import Completion, Error, RawCompletion
-from eval_framework.subjects import Subjects, SubjectsSelector
+from eval_framework.subjects import NoSubject, Subjects, SubjectsSelector
 from eval_framework.tasks.base import RANDOM_SEED, Language
 from eval_framework.tasks.dataset_loading import DatasetLoader, DatasetPolicy
 from eval_framework.tasks.markdown_doc import markdown_doc as render_markdown_doc
@@ -27,12 +27,15 @@ from template_formatting.formatter import BaseFormatter, Message, Role
 if TYPE_CHECKING:
     from eval_framework.llm.base import BaseLLM
     from eval_framework.metrics.base import BaseMetric
-    from eval_framework.tasks.task_style import TaskStyler
 
 logger = logging.getLogger(__name__)
 
 # The language(s) a benchmark tests: a single language, a per-subtopic mapping, or None (not language-specific).
 LanguageSpec = Language | dict[str, Language] | dict[str, tuple[Language, Language]] | None
+
+# An initial prompt ("preamble") for a benchmark: maps the subject label to the text prepended once
+# at the top of each assembled prompt (e.g. "The following are multiple choice questions about {subject}.").
+InitialPrompt = Callable[[str], str]
 
 
 @final
@@ -42,25 +45,25 @@ class ComposedEval(Eval):
         num_fewshot: int = 0,
         *,
         display_name: str,
-        reader: ChoiceReader,
+        kind: EvalKind,
         loader: DatasetLoader,
-        styler: "TaskStyler",
         sample_split: str,
         fewshot_split: str,
         subjects: Subjects,
         language: LanguageSpec,
         rnd: random.Random,
+        initial_prompt: InitialPrompt | None = None,
     ) -> None:
         self._display_name = display_name
         self.num_fewshot = num_fewshot
-        self.reader = reader
+        self._kind = kind
         self.loader = loader
-        self.styler = styler
         self.sample_split = sample_split
         self.fewshot_split = fewshot_split
         self._subjects = subjects
         self.language = language
         self.rnd = rnd
+        self._initial_prompt = initial_prompt
 
     def _shuffle_splits(self, hf_dataset: DatasetDict) -> dict[str, Any]:
         dataset = {}
@@ -82,68 +85,47 @@ class ComposedEval(Eval):
         hf_dataset = self.loader.load(load_key)
         return self._shuffle_splits(hf_dataset=hf_dataset)
 
-    def _example_messages(self, item: dict[str, Any], fewshot_pool: list[dict]) -> list[Message]:
-        fewshot_examples = self._sample_fewshot_examples(item, fewshot_pool) if self.num_fewshot > 0 else []
-
-        example_messages = []
-        for fewshot_example in fewshot_examples:
-            fewshot_example["subject"] = item["subject"]
-            example_messages.extend(self._get_instruction_messages(fewshot_example))
-            example_messages.append(
-                Message(role=Role.ASSISTANT, content=self._get_fewshot_target_text(fewshot_example))
-            )
-        return example_messages
-
-    def _messages(self, item: dict[str, Any], fewshot_pool: list[dict]) -> list[Message]:
-        example_messages = self._example_messages(item, fewshot_pool)
-        instruction_message = self._get_instruction_messages(item)
-        cue_text = self._get_cue_text(item)
-        cue_message = [Message(role=Role.ASSISTANT, content=cue_text)] if cue_text else []
-        return example_messages + instruction_message + cue_message
-
-    def _get_instruction_messages(self, item: dict[str, Any]) -> list[Message]:
-        return [Message(role=Role.USER, content=self._get_instruction_text(item))]
-
     @override
     def iterate_samples(self, num_samples: int | None = None) -> Iterable[Sample]:
+        sample_id = 0
         for subject in self._subjects:
             dataset = self._load_dataset(subject.load_key)
             fewshot_pool = dataset[self.fewshot_split] if self.num_fewshot > 0 else []
             assert len(dataset[self.sample_split]) > 0
-            for index, item in enumerate(dataset[self.sample_split]):
-                if index == num_samples:
-                    break
+            for item in dataset[self.sample_split]:
                 item["subject"] = subject.label
-                yield self._create_sample(item, index, subject.label, fewshot_pool)
+                prefix = self._fewshot_prefix(item, fewshot_pool)
+                for body in self._kind.samples(item):
+                    messages = [*prefix, Message(role=Role.USER, content=body.prompt)]
+                    if self._initial_prompt is not None:
+                        # Prepended once, to the very first message (same placement as BaseTask's
+                        # ``_get_initial_prompt_text``): before the first fewshot example if present.
+                        first = messages[0]
+                        content = f"{self._initial_prompt(subject.label)}\n\n{first.content}"
+                        messages[0] = Message(role=first.role, content=content)
+                    if body.cue:
+                        messages.append(Message(role=Role.ASSISTANT, content=body.cue))
+                    yield Sample(
+                        id=sample_id,
+                        subject=subject.label,
+                        messages=messages,
+                        ground_truth=body.ground_truth,
+                        possible_completions=body.possible_completions,
+                        context=None,
+                    )
+                    sample_id += 1
+                    if sample_id == num_samples:
+                        return
 
-    def _create_sample(self, item: dict[str, Any], index: int, subject: str, fewshot_pool: list[dict]) -> Sample:
-        return Sample(
-            id=index,
-            subject=str(subject),
-            messages=self._messages(item, fewshot_pool),
-            ground_truth=self._get_ground_truth(item),
-            possible_completions=self._get_possible_completions(item),
-            context=None,
-        )
-
-    def _get_instruction_text(self, item: dict[str, Any]) -> str:
-        fields = self.reader.read(item)
-        return self.styler.get_instruction_text(fields.raw_question, fields.choices)
-
-    def _get_fewshot_target_text(self, item: dict[str, Any]) -> str:
-        fields = self.reader.read(item)
-        return self.styler.get_fewshot_target_text(fields.choices, fields.correct_index)
-
-    def _get_ground_truth(self, item: dict[str, Any]) -> str | None | list[str]:
-        fields = self.reader.read(item)
-        return self.styler.get_ground_truth(fields.choices, fields.correct_index)
-
-    def _get_cue_text(self, item: dict[str, Any]) -> str:
-        return self.styler.get_cue_text()
-
-    def _get_possible_completions(self, item: dict[str, Any]) -> list[str] | None:
-        fields = self.reader.read(item)
-        return self.styler.get_possible_completions(fields.choices, fields.correct_index)
+    def _fewshot_prefix(self, item: dict[str, Any], fewshot_pool: list[dict]) -> list[Message]:
+        fewshot_examples = self._sample_fewshot_examples(item, fewshot_pool) if self.num_fewshot > 0 else []
+        prefix: list[Message] = []
+        for fewshot_example in fewshot_examples:
+            fewshot_example["subject"] = item["subject"]
+            example = self._kind.fewshot(fewshot_example)
+            prefix.append(Message(role=Role.USER, content=example.prompt))
+            prefix.append(Message(role=Role.ASSISTANT, content=example.answer))
+        return prefix
 
     def _sample_fewshot_examples(self, item: dict[str, Any], fewshot_pool: list[dict]) -> list[dict]:
         if self.fewshot_split == self.sample_split:
@@ -164,11 +146,11 @@ class ComposedEval(Eval):
             "sample_split": self.sample_split,
             "fewshot_split": self.fewshot_split,
             "response_type": self.get_response_type().value,
-            "metrics": [m.NAME for m in self.styler.metrics],
+            "metrics": [m.NAME for m in self._kind.metrics],
             "subjects": [s.label for s in self._subjects],
         }
         meta.update(self.loader.metadata())
-        meta.update(self.styler.get_extra_metadata())
+        meta.update(self._kind.metadata())
         return meta
 
     @override
@@ -255,29 +237,29 @@ class ComposedEval(Eval):
 
     @override
     def get_response_type(self) -> ResponseType:
-        return self.styler.response_type
+        return self._kind.response_type
 
     @override
     def display_name(self) -> str:
         return self._display_name
 
 
-def _metrics_for(styler: "TaskStyler") -> list[type["BaseMetric"]]:
-    """The metrics a styler implies: its own plus those its response type requires."""
+def _metrics_for(kind: EvalKind) -> list[type["BaseMetric"]]:
+    """The metrics a kind implies: its own plus those its response type requires."""
     response_type_metrics: list[type[BaseMetric]]
-    match styler.response_type:
+    match kind.response_type:
         case ResponseType.COMPLETION:
             response_type_metrics = [BytesCompletion, SequencePositionsCompletion, TokenCounts]
         case ResponseType.LOGLIKELIHOODS:
             response_type_metrics = [BytesLoglikelihood, SequencePositionsLoglikelihood]
         case _:
-            typing.assert_never(styler.response_type)
-    return styler.metrics + response_type_metrics
+            typing.assert_never(kind.response_type)
+    return kind.metrics + response_type_metrics
 
 
 @final
 class ComposedBenchmark(Benchmark):
-    """A ``Benchmark`` that builds a ``ComposedEval`` from an injected styler and dataset inputs."""
+    """A ``Benchmark`` that builds a ``ComposedEval`` from an injected eval kind and dataset policy."""
 
     def __init__(
         self,
@@ -285,48 +267,52 @@ class ComposedBenchmark(Benchmark):
         id: str,
         display_name: str,
         subjects: SubjectsSelector,
-        styler: "TaskStyler",
-        reader: ChoiceReader,
+        kind: EvalKind,
         sample_split: str,
         fewshot_split: str,
         dataset_policy: DatasetPolicy,
         language: LanguageSpec,
+        initial_prompt: InitialPrompt | None = None,
     ) -> None:
         self._id = id
         self._display_name = display_name
         self._subjects = subjects
-        self._styler = styler
-        self.reader = reader
+        self._kind = kind
         self.sample_split = sample_split
         self.fewshot_split = fewshot_split
         self.language = language
         self.dataset_policy = dataset_policy
+        self._initial_prompt = initial_prompt
 
     @classmethod
     def compose(
         cls,
         *,
         id: str,
-        styler: "TaskStyler",
-        reader: ChoiceReader,
+        kind: EvalKind,
         sample_split: str,
         fewshot_split: str,
-        subjects: SubjectsSelector,
+        subjects: SubjectsSelector | None = None,
         dataset_policy: DatasetPolicy,
         language: LanguageSpec,
         display_name: str | None = None,
+        initial_prompt: InitialPrompt | None = None,
     ) -> Self:
-        """Build a ``ComposedBenchmark`` from its inputs; ``display_name`` defaults to ``id``."""
+        """Build a ``ComposedBenchmark`` from its inputs; ``subjects`` defaults to ``NoSubject``
+        (a single unnamed slice) and ``display_name`` to ``id``.
+
+        ``initial_prompt`` maps the subject label to a preamble prepended once to each prompt's
+        first message (separated by a blank line), before the first fewshot example if present."""
         return cls(
             id=id,
             display_name=display_name if display_name is not None else id,
-            subjects=subjects,
-            styler=styler,
-            reader=reader,
+            subjects=subjects if subjects is not None else NoSubject(),
+            kind=kind,
             sample_split=sample_split,
             fewshot_split=fewshot_split,
             language=language,
             dataset_policy=dataset_policy,
+            initial_prompt=initial_prompt,
         )
 
     @override
@@ -352,25 +338,25 @@ class ComposedBenchmark(Benchmark):
         return ComposedEval(
             num_fewshot=num_fewshot,
             display_name=self._display_name,
-            reader=self.reader,
-            styler=self._styler,
+            kind=self._kind,
             sample_split=self.sample_split,
             fewshot_split=self.fewshot_split,
             subjects=subjects,
             language=self.language,
             loader=self.dataset_policy.loader(custom_hf_revision),
             rnd=random.Random(seed),
+            initial_prompt=self._initial_prompt,
         )
 
     @override
     def response_type(self) -> ResponseType:
         """The benchmark's response type"""
-        return self._styler.response_type
+        return self._kind.response_type
 
     @override
     def metrics(self) -> list[type["BaseMetric"]]:
         """The benchmark's metrics"""
-        return _metrics_for(self._styler)
+        return _metrics_for(self._kind)
 
     @override
     def subjects(self) -> list[Any]:
@@ -389,14 +375,14 @@ class ComposedBenchmark(Benchmark):
         instance = ComposedEval(
             num_fewshot=num_fewshot,
             display_name=self._display_name,
-            reader=self.reader,
-            styler=self._styler,
+            kind=self._kind,
             sample_split=self.sample_split,
             fewshot_split=self.fewshot_split,
             subjects=subjects,
             language=self.language,
             loader=self.dataset_policy.loader(None),
             rnd=random.Random(RANDOM_SEED),
+            initial_prompt=self._initial_prompt,
         )
         sample = next(iter(instance.iterate_samples(1)))
         dataset = instance._load_dataset(subjects[0].load_key)

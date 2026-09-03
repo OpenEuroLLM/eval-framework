@@ -25,8 +25,8 @@ runtime Python dependencies; dev-only and internal packages are excluded.
 
 ## Apache-2.0
 
-- **boto3** 1.43.85 - https://github.com/boto/boto3
-- **botocore** 1.43.85 - https://github.com/boto/botocore
+- **boto3** 1.43.87 - https://github.com/boto/boto3
+- **botocore** 1.43.87 - https://github.com/boto/botocore
 - **datasets** 5.0.1 - https://github.com/huggingface/datasets
 - **hf-xet** 1.6.0 - https://github.com/huggingface/xet-core
 - **huggingface_hub** 0.36.2 - https://github.com/huggingface/huggingface_hub
@@ -41,7 +41,7 @@ runtime Python dependencies; dev-only and internal packages are excluded.
 
 ## Apache-2.0 AND CNRI-Python
 
-- **regex** 2026.8.31 - https://github.com/mrabarnett/mrab-regex
+- **regex** 2026.9.3 - https://github.com/mrabarnett/mrab-regex
 
 ## Apache-2.0 OR BSD-2-Clause
 
@@ -67,7 +67,7 @@ runtime Python dependencies; dev-only and internal packages are excluded.
 - **idna** 3.19 - https://github.com/kjd/idna
 - **joblib** 1.6.0 - https://joblib.readthedocs.io
 - **jsonlines** 4.0.0 - https://github.com/wbolster/jsonlines
-- **lxml** 6.1.2 - https://lxml.de/
+- **lxml** 6.1.3 - https://lxml.de/
 - **mpmath** 1.3.0 - http://mpmath.org/
 - **multiprocess** 0.70.19 - https://github.com/uqfoundation/multiprocess
 - **pandas** 3.0.5 - https://pandas.pydata.org
@@ -95,7 +95,7 @@ runtime Python dependencies; dev-only and internal packages are excluded.
 ## MIT
 
 - **annotated-types** 0.8.0 - https://github.com/annotated-types/annotated-types
-- **anyio** 4.14.2 - https://anyio.readthedocs.io/en/stable/versionhistory.html
+- **anyio** 4.15.0 - https://anyio.readthedocs.io/en/stable/versionhistory.html
 - **attrs** 26.1.0 - https://www.attrs.org/en/stable/changelog.html
 - **charset-normalizer** 3.5.1 - https://github.com/jawah/charset_normalizer/blob/master/CHANGELOG.md
 - **filelock** 3.32.5 - https://github.com/tox-dev/py-filelock
@@ -103,7 +103,7 @@ runtime Python dependencies; dev-only and internal packages are excluded.
 - **jmespath** 1.1.0 - https://github.com/jmespath/jmespath.py
 - **jsonschema** 4.26.0 - https://github.com/python-jsonschema/jsonschema
 - **jsonschema-specifications** 2025.9.1 - https://github.com/python-jsonschema/jsonschema-specifications
-- **platformdirs** 4.11.5 - https://github.com/tox-dev/platformdirs
+- **platformdirs** 4.11.7 - https://github.com/tox-dev/platformdirs
 - **pydantic** 2.13.5 - https://github.com/pydantic/pydantic
 - **pydantic_core** 2.46.5 - https://github.com/pydantic
 - **PyYAML** 6.0.3 - https://pyyaml.org/
@@ -162,7 +162,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### anyio 4.14.2 (MIT)
+### anyio 4.15.0 (MIT)
 
 ```text
 The MIT License (MIT)
@@ -213,7 +213,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### boto3 1.43.85 (Apache-2.0)
+### boto3 1.43.87 (Apache-2.0)
 
 ```text
 Apache License
@@ -394,7 +394,7 @@ Apache License
    END OF TERMS AND CONDITIONS
 ```
 
-### botocore 1.43.85 (Apache-2.0)
+### botocore 1.43.87 (Apache-2.0)
 
 ```text
 Apache License
@@ -2177,7 +2177,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### lxml 6.1.2 (BSD-3-Clause)
+### lxml 6.1.3 (BSD-3-Clause)
 
 ```text
 BSD 3-Clause License
@@ -12833,7 +12833,7 @@ https://opensource.apple.com/source/tcl/tcl-14/tcl/license.terms
   terms specified in this license.
 ```
 
-### platformdirs 4.11.5 (MIT)
+### platformdirs 4.11.7 (MIT)
 
 ```text
 MIT License
@@ -16111,7 +16111,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### regex 2026.8.31 (Apache-2.0 AND CNRI-Python)
+### regex 2026.9.3 (Apache-2.0 AND CNRI-Python)
 
 ```text
 This work was derived from the 're' module of CPython 2.6 and CPython 3.1,
