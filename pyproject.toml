@@ -1,6 +1,6 @@
 [project]
 name = "eval-framework"
-version = "0.11.11"
+version = "0.11.12"
 description = "Evaluation Framework"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -40,7 +40,7 @@ dependencies = [
   "python-iso639>=2026.7.23",
   "wandb>=0.29.0,<1",
   "boto3>=1.43.89,<2",
-  "numpy>=2.5.2",
+  "numpy>=2.5.3",
   # is a dependency of sympy, but not explicitly listed in the requirements.txt
   # https://github.com/sympy/sympy/blob/0204fa34e8f6f6f8ccb4de01209be9a2345c9d6e/doc/src/contributing/dependencies.md?plain=1#L125
   "antlr4-python3-runtime==4.11.0",
@@ -89,9 +89,9 @@ dev = [
   "pytest-mock>=3.15.1",
   "pytest-xdist>=3.8.0,<4",
   "pytest-sugar>1.1,<2",
-  "types-pyyaml>=6.0.12.20260815,<7",
+  "types-pyyaml>=6.0.12.20260906,<7",
   "types-python-dateutil>=2.9.0.20260807,<3",
-  "types-requests>=2.33.0.20260712,<3",
+  "types-requests>=2.33.0.20260906,<3",
   "plotly>=7.0.0,<8",
   "ruff>=0.16.6",
   "pip-licenses>=5.5.5",
