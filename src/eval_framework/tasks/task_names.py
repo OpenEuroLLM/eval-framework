@@ -2,9 +2,12 @@ from enum import Enum
 
 from eval_framework.benchmarks.arc_de import ARC_DE_BENCHMARK
 from eval_framework.benchmarks.csqa_ellamind import CSQA_ELLAMIND_BENCHMARKS
+from eval_framework.benchmarks.goldenswag import GOLDENSWAG_BENCHMARKS
 from eval_framework.benchmarks.gpqa_ellamind import GPQA_ELLAMIND_BENCHMARKS
+from eval_framework.benchmarks.hellaswag import HELLASWAG_BENCHMARKS
 from eval_framework.benchmarks.hellaswag_ellamind import HELLASWAG_ELLAMIND_BENCHMARKS
 from eval_framework.benchmarks.hle_ellamind import HLE_ELLAMIND_BENCHMARKS
+from eval_framework.benchmarks.piqa import PIQA_BENCHMARKS
 from eval_framework.benchmarks.piqa_ellamind import PIQA_ELLAMIND_BENCHMARKS
 from eval_framework.benchmarks.simpleqa_ellamind import SIMPLEQA_ELLAMIND_BENCHMARKS
 from eval_framework.benchmarks.siqa_ellamind import SIQA_ELLAMIND_BENCHMARKS
@@ -77,15 +80,14 @@ def register_arc_tasks(registry: Registry) -> None:
 
 def register_hellaswag_tasks(registry: Registry) -> None:
     """Register hellaswag benchmark tasks."""
-    register_lazy_task("eval_framework.tasks.benchmarks.hellaswag.HELLASWAG", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.hellaswag.HELLASWAG_OLMES", registry=registry)
+    for benchmark in HELLASWAG_BENCHMARKS:
+        registry.add(benchmark)
 
 
 def register_piqa_tasks(registry: Registry) -> None:
     """Register piqa benchmark tasks."""
-    register_lazy_task("eval_framework.tasks.benchmarks.piqa.PIQA", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.piqa.PIQA_IDK", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.piqa.PIQA_OLMES", registry=registry)
+    for benchmark in PIQA_BENCHMARKS:
+        registry.add(benchmark)
 
 
 def register_gpqa_tasks(registry: Registry) -> None:
@@ -161,8 +163,8 @@ def register_copa_tasks(registry: Registry) -> None:
 
 def register_goldenswag_tasks(registry: Registry) -> None:
     """Register goldenswag benchmark tasks."""
-    register_lazy_task("eval_framework.tasks.benchmarks.goldenswag.GOLDENSWAG", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.goldenswag.GOLDENSWAG_IDK", registry=registry)
+    for benchmark in GOLDENSWAG_BENCHMARKS:
+        registry.add(benchmark)
 
 
 def register_ifeval_tasks(registry: Registry) -> None:

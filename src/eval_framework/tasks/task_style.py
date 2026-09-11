@@ -69,6 +69,9 @@ from eval_framework.metrics.loglikelihood.accuracy_loglikelihood import (
     AccuracyNormLoglikelihood,
 )
 from eval_framework.metrics.loglikelihood.bits_per_byte import BitsPerByteLoglikelihood
+from eval_framework.metrics.loglikelihood.confidence_weighted_accuracy import ConfidenceWeightedAccuracy
+from eval_framework.metrics.loglikelihood.dcs import DistributionalCorrectnessScore
+from eval_framework.metrics.loglikelihood.ternary import TernaryScore
 from eval_framework.tasks.base import Language, ResponseType, TaskStyle
 from eval_framework.tasks.utils import get_n_letters
 
@@ -143,6 +146,10 @@ class TaskStyler(ABC):
     def get_extra_metadata(self) -> dict:
         """Return styler-specific metadata to merge into the task's metadata."""
         return {"task_style": self.task_style.value}
+
+    def initial_prompt(self) -> str | None:
+        """A preamble prepended once at the top of the prompt, or None (the default: no preamble)."""
+        return None
 
     @classmethod
     def for_language(cls, language: Language, **kwargs: Any) -> Self:
@@ -365,6 +372,54 @@ class BPBStyle(ClozeStyle):
                 "and thus requires the correct index."
             )
         return [f" {choices[correct_index]}"] if self.leading_space_continuations else [choices[correct_index]]
+
+
+class IdkClozeStyle(TaskStyler):
+    """Cloze scoring for tasks that let the model abstain with an explicit "I do not know" answer.
+
+    Use this when a benchmark rewards calibrated abstention over confident guessing: it prefaces the
+    prompt with the abstention preamble, scores the real answers together with the abstention option,
+    and reports confidence-aware metrics.
+
+    Args:
+        abstention_option: The abstention completion scored alongside the real choices, e.g.
+                           ``" I do not know"`` (leading space; some tasks add a trailing period).
+        initial_prompt:    The preamble telling the model it may abstain, prepended once at the top of
+                           the prompt (required — it pairs with the abstention option).
+        cloze:             The underlying cloze styling (default ``ClozeStyle()``).
+    """
+
+    response_type = ResponseType.LOGLIKELIHOODS
+    metrics: list[type["BaseMetric"]] = [
+        AccuracyLoglikelihood,
+        AccuracyNormLoglikelihood,
+        AccuracyBayesianLoglikelihood,
+        ConfidenceWeightedAccuracy,
+        DistributionalCorrectnessScore,
+        TernaryScore,
+    ]
+    task_style = TaskStyle.CLOZE
+
+    def __init__(self, abstention_option: str, initial_prompt: str, cloze: ClozeStyle | None = None) -> None:
+        self._cloze = cloze or ClozeStyle()
+        self._abstention_option = abstention_option
+        self._initial_prompt = initial_prompt
+        self.question_prefix = self._cloze.question_prefix
+
+    def get_instruction_text(self, raw_question: str, choices: list[str]) -> str:
+        return self._cloze.get_instruction_text(raw_question, choices)
+
+    def get_ground_truth(self, choices: list[str], correct_index: int) -> str:
+        return self._cloze.get_ground_truth(choices, correct_index)
+
+    def get_cue_text(self) -> str:
+        return self._cloze.get_cue_text()
+
+    def get_possible_completions(self, choices: list[str], correct_index: int | None = None) -> list[str]:
+        return self._cloze.get_possible_completions(choices, correct_index) + [self._abstention_option]
+
+    def initial_prompt(self) -> str | None:
+        return self._initial_prompt
 
 
 # ---------------------------------------------------------------------------

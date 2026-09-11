@@ -6,7 +6,7 @@ import pytest
 from datasets import Dataset, DatasetDict
 
 from eval_framework.choices import ChoiceFields, ChoiceReader
-from eval_framework.composed import ComposedBenchmark, ComposedEval, InitialPrompt, LanguageSpec
+from eval_framework.composed import ComposedBenchmark, ComposedEval, LanguageSpec
 from eval_framework.contract import ResponseType
 from eval_framework.eval_kind import Choice
 from eval_framework.metrics.base import BaseMetric
@@ -129,7 +129,6 @@ def _make_benchmark(
     subjects: SubjectsSelector = _DUMMY_SELECTOR,
     dataset_policy: DatasetPolicy | None = None,
     language: LanguageSpec = None,
-    initial_prompt: InitialPrompt | None = None,
 ) -> ComposedBenchmark:
     """Build a ``ComposedBenchmark`` for tests, defaulting to dummies for every argument the test does not provide."""
     return ComposedBenchmark.compose(
@@ -141,7 +140,6 @@ def _make_benchmark(
         subjects=subjects,
         dataset_policy=dataset_policy or _DummyDatasetPolicy(),
         language=language,
-        initial_prompt=initial_prompt,
     )
 
 
@@ -332,6 +330,28 @@ def test_message_sampling() -> None:
     ]
 
 
+def test_num_samples_caps_per_subject_not_in_total() -> None:
+    # Given an eval over two subjects, each served three items,
+    class _Loader(DatasetLoader):
+        @override
+        def load(self, name: str | None) -> DatasetDict:
+            return DatasetDict({_DUMMY_SPLIT: Dataset.from_list([{"q": 1}, {"q": 2}, {"q": 3}])})
+
+        @override
+        def metadata(self) -> dict[str, str]:
+            return {}
+
+    subjects = (Subject(load_key="a", label="a"), Subject(load_key="b", label="b"))
+    task = _make_eval(loader=_Loader(), subjects=subjects)
+
+    # When capping at two samples
+    samples = list(task.iterate_samples(num_samples=2))
+
+    # Then num_samples caps per subject (like BaseTask): two from each; ids restart at 0 per subject
+    assert [sample.subject for sample in samples] == ["a", "a", "b", "b"]
+    assert [sample.id for sample in samples] == [0, 1, 0, 1]
+
+
 def test_initial_prompt_is_prepended_once_before_the_first_fewshot_example() -> None:
     # Given a reader/styler pair that echoes each item's question,
     class _Reader(ChoiceReader):
@@ -348,20 +368,23 @@ def test_initial_prompt_is_prepended_once_before_the_first_fewshot_example() -> 
         def get_cue_text(self) -> str:
             return "the cue"
 
-    # and a benchmark over one eval row and one fewshot row, with a subject-dependent initial prompt
+        @override
+        def initial_prompt(self) -> str | None:
+            return "About the task."
+
+    # and a benchmark over one eval row and one fewshot row, with an initial prompt
     benchmark = _make_benchmark(
         reader=_Reader(),
         styler=_Styler(),
         fewshot_split="train",
         dataset_policy=DatasetStub({"test": [{"question": "eval q"}], "train": [{"question": "shot q"}]}),
-        initial_prompt=lambda subject: f"About {subject}.",
     )
 
     # When assembling a 1-shot sample, then the initial prompt appears exactly once,
     # at the top of the first (fewshot) USER message
     sample = first_sample(benchmark, num_fewshot=1)
     assert sample.messages == [
-        Message(role=Role.USER, content="About subject.\n\ninstruction: shot q"),
+        Message(role=Role.USER, content="About the task.\n\ninstruction: shot q"),
         Message(role=Role.ASSISTANT, content="the cue"),
         Message(role=Role.USER, content="instruction: eval q"),
         Message(role=Role.ASSISTANT, content="the cue"),
