@@ -15,6 +15,7 @@ from eval_framework.metrics.efficiency.bytes_per_sequence_position import (
     SequencePositionsCompletion,
     SequencePositionsLoglikelihood,
 )
+from eval_framework.metrics.efficiency.finish_reason import FinishReason
 from eval_framework.metrics.efficiency.token_counters import TokenCounts
 from eval_framework.shared.errors import raise_errors
 from eval_framework.shared.types import Completion, Error, RawCompletion
@@ -85,6 +86,7 @@ class ComposedEval(Eval):
             dataset = self._load_dataset(subject.load_key)
             fewshot_pool = dataset[self.fewshot_split] if self.num_fewshot > 0 else []
             assert len(dataset[self.sample_split]) > 0
+            initial_prompt = self._kind.initial_prompt(subject.label)
             sample_id = 0  # ids and the num_samples cap are per subject, matching BaseTask
             done = False
             for item in dataset[self.sample_split]:
@@ -96,7 +98,7 @@ class ComposedEval(Eval):
                     yield Sample(
                         id=sample_id,
                         subject=subject.label,
-                        messages=self._messages(prefix, sample_body),
+                        messages=self._messages(prefix, sample_body, initial_prompt),
                         ground_truth=sample_body.ground_truth,
                         possible_completions=sample_body.possible_completions,
                         context=None,
@@ -106,9 +108,8 @@ class ComposedEval(Eval):
                         done = True
                         break
 
-    def _messages(self, prefix: list[Message], body: SampleBody) -> list[Message]:
+    def _messages(self, prefix: list[Message], body: SampleBody, initial_prompt: str | None) -> list[Message]:
         messages = [*prefix, Message(role=Role.USER, content=body.prompt)]
-        initial_prompt = self._kind.initial_prompt()
         if initial_prompt is not None:
             first = messages[0]
             messages[0] = Message(role=first.role, content=f"{initial_prompt}\n\n{first.content}")
@@ -237,6 +238,14 @@ class ComposedEval(Eval):
         return completion_list
 
     @override
+    def get_stop_sequences(self) -> list[str]:
+        return []
+
+    @override
+    def get_max_tokens(self) -> int | None:
+        return None
+
+    @override
     def get_response_type(self) -> ResponseType:
         return self._kind.response_type
 
@@ -250,7 +259,7 @@ def _metrics_for(kind: EvalKind) -> list[type["BaseMetric"]]:
     response_type_metrics: list[type[BaseMetric]]
     match kind.response_type:
         case ResponseType.COMPLETION:
-            response_type_metrics = [BytesCompletion, SequencePositionsCompletion, TokenCounts]
+            response_type_metrics = [BytesCompletion, SequencePositionsCompletion, TokenCounts, FinishReason]
         case ResponseType.LOGLIKELIHOODS:
             response_type_metrics = [BytesLoglikelihood, SequencePositionsLoglikelihood]
         case _:
