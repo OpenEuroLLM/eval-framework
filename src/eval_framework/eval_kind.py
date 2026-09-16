@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING, Any, final, override
 
 from eval_framework.choices import ChoiceReader
 from eval_framework.contract import ResponseType
+from eval_framework.shared.types import BaseMetricContext
+from template_formatting.formatter import Message
 
 if TYPE_CHECKING:
     from eval_framework.metrics.base import BaseMetric
@@ -18,12 +20,6 @@ class SampleBody:
     ground_truth: str
 
 
-@dataclass(frozen=True)
-class FewshotExample:
-    prompt: str  # the user turn
-    answer: str  # the assistant turn (the shown correct answer)
-
-
 class EvalKind(ABC):
     """How a kind of task becomes scored model interactions. Describes what kind of test this is.
 
@@ -32,12 +28,13 @@ class EvalKind(ABC):
     A kind deals only in text; ``ComposedEval`` owns the (fixed) mapping to USER / ASSISTANT turns.
     """
 
-    response_type: ResponseType
-    metrics: list[type["BaseMetric"]]
+    @abstractmethod
+    def response_type(self) -> ResponseType:
+        """Whether this kind is scored by loglikelihood over candidates or by free-form completion."""
 
     @abstractmethod
-    def fewshot(self, item: dict[str, Any]) -> FewshotExample:
-        """One solved few-shot example: the prompt shown and the answer shown."""
+    def metrics(self) -> list[type["BaseMetric"]]:
+        """The metrics this kind is scored with."""
 
     @abstractmethod
     def samples(self, item: dict[str, Any]) -> list[SampleBody]:
@@ -52,6 +49,26 @@ class EvalKind(ABC):
         examples), or None."""
         return None
 
+    @abstractmethod
+    def stop_sequences(self) -> list[str]:
+        """Stop sequences for completion generation (empty for kinds scored by loglikelihood)."""
+
+    @abstractmethod
+    def max_tokens(self) -> int | None:
+        """Token limit for completion generation, or None for no limit."""
+
+    @abstractmethod
+    def extract_answer(
+        self,
+        completion_text: str,
+        *,
+        context: BaseMetricContext | list[BaseMetricContext] | None,
+        ground_truth: str | list[str] | None,
+        messages: list[Message],
+    ) -> str:
+        """The answer to score, extracted from the raw generation. Free-form kinds pull it out (strip
+        reasoning, apply a regex); kinds whose generation is already the answer return it unchanged."""
+
 
 @final
 class Choice(EvalKind):
@@ -61,16 +78,14 @@ class Choice(EvalKind):
     def __init__(self, reader: ChoiceReader, styler: "TaskStyler") -> None:
         self._reader = reader
         self._styler = styler
-        self.response_type = styler.response_type
-        self.metrics = styler.metrics
 
     @override
-    def fewshot(self, item: dict[str, Any]) -> FewshotExample:
-        fields = self._reader.read(item)
-        return FewshotExample(
-            prompt=self._styler.get_instruction_text(fields.raw_question, fields.choices),
-            answer=self._styler.get_fewshot_target_text(fields.choices, fields.correct_index),
-        )
+    def response_type(self) -> ResponseType:
+        return self._styler.response_type
+
+    @override
+    def metrics(self) -> list[type["BaseMetric"]]:
+        return self._styler.metrics
 
     @override
     def samples(self, item: dict[str, Any]) -> list[SampleBody]:
@@ -93,3 +108,22 @@ class Choice(EvalKind):
     @override
     def initial_prompt(self, subject_label: str) -> str | None:
         return self._styler.initial_prompt(subject_label)
+
+    @override
+    def stop_sequences(self) -> list[str]:
+        return []
+
+    @override
+    def max_tokens(self) -> int | None:
+        return None
+
+    @override
+    def extract_answer(
+        self,
+        completion_text: str,
+        *,
+        context: BaseMetricContext | list[BaseMetricContext] | None,
+        ground_truth: str | list[str] | None,
+        messages: list[Message],
+    ) -> str:
+        return completion_text  # a choice scores the completion directly; nothing to extract

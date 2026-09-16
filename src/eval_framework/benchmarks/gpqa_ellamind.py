@@ -11,7 +11,6 @@ from typing import Any, final, override
 from eval_framework.choices import ChoiceFields, ChoiceReader
 from eval_framework.composed import ComposedBenchmark
 from eval_framework.contract import Benchmark
-from eval_framework.eval_kind import Choice
 from eval_framework.subjects import ListOfSubjects
 from eval_framework.tasks.base import Language
 from eval_framework.tasks.dataset_loading import DatasetPolicy, Subset
@@ -34,11 +33,11 @@ class GpqaReader(ChoiceReader):
 
 
 def _gpqa_ellamind_benchmark(id: str, styler: TaskStyler, dataset: DatasetPolicy | None = None) -> Benchmark:
-    kind = Choice(reader=GpqaReader(), styler=styler)
     dataset_policy = dataset if dataset is not None else pinned_by_framework("ellamind/gpqa-multilingual")
-    return ComposedBenchmark.compose(
+    return ComposedBenchmark.choice(
         id=id,
-        kind=kind,
+        reader=GpqaReader(),
+        styler=styler,
         sample_split="train",
         fewshot_split="train",
         subjects=ListOfSubjects(["deu"]),

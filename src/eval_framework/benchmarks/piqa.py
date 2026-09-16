@@ -12,7 +12,6 @@ from typing import Any, final, override
 from eval_framework.choices import ChoiceFields, ChoiceReader
 from eval_framework.composed import ComposedBenchmark
 from eval_framework.contract import Benchmark
-from eval_framework.eval_kind import Choice
 from eval_framework.tasks.base import Language
 from eval_framework.tasks.dataset_loading import DatasetPolicy
 from eval_framework.tasks.dataset_revisions import pinned_frozen
@@ -46,11 +45,11 @@ def _piqa_benchmark(
     fewshot_split: str,
     dataset: DatasetPolicy | None = None,
 ) -> Benchmark:
-    kind = Choice(reader=PiqaReader(), styler=styler)
     dataset_policy = dataset if dataset is not None else pinned_frozen("ybisk/piqa")
-    return ComposedBenchmark.compose(
+    return ComposedBenchmark.choice(
         id=id,
-        kind=kind,
+        reader=PiqaReader(),
+        styler=styler,
         sample_split=sample_split,
         fewshot_split=fewshot_split,
         dataset_policy=dataset_policy,

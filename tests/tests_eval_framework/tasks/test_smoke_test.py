@@ -2,13 +2,6 @@ import pytest
 from datasets.exceptions import DatasetNotFoundError
 
 from eval_framework.tasks.benchmarks.arc import ARC_OLMES
-from eval_framework.tasks.benchmarks.copa import COPA_OLMES, COPA_IDKEvalHarness, COPAEvalHarness
-from eval_framework.tasks.benchmarks.csqa import (
-    CommonsenseQACloze,
-    CommonsenseQAFullTextCloze,
-    CommonsenseQAMC,
-    CommonsenseQAMC_OLMES,
-)
 from eval_framework.tasks.benchmarks.drop import DropCloze, DropCompletion, DropMC, DropMC_OLMES
 from eval_framework.tasks.benchmarks.global_mmlu import GlobalMMLU
 from eval_framework.tasks.benchmarks.gpqa import GPQA_OLMES
@@ -20,7 +13,6 @@ from eval_framework.tasks.benchmarks.math_reasoning import (
     MATHMinervaEvalHarness,
 )
 from eval_framework.tasks.benchmarks.mbpp import MBPPBPB
-from eval_framework.tasks.benchmarks.medqa import MedQACloze, MedQAMC, MedQAMC_OLMES
 from eval_framework.tasks.benchmarks.mmlu_pro import MMLU_PRO_OLMES
 from eval_framework.tasks.benchmarks.naturalqs_open import (
     NaturalQsOpen,
@@ -28,7 +20,6 @@ from eval_framework.tasks.benchmarks.naturalqs_open import (
     NaturalQsOpenMC,
     NaturalQsOpenMC_OLMES,
 )
-from eval_framework.tasks.benchmarks.sciq import SCIQ_IDK, SCIQ_OLMES, SCIQEvalHarness_IDK
 from eval_framework.tasks.benchmarks.social_iqa import SocialIQACloze, SocialIQAMC, SocialIQAMC_OLMES
 from eval_framework.tasks.benchmarks.squad import SQUAD2BPB
 from eval_framework.tasks.benchmarks.winogrande import WINOGRANDE_OLMES
@@ -47,15 +38,6 @@ def _smoke_test_task(task_cls, num_fewshot: int = 0) -> None:
         assert sample.id is not None
         assert isinstance(sample.subject, str)
         assert sample.messages
-
-
-@pytest.mark.cpu_slow
-@pytest.mark.slow_download
-def test_csqa_tasks_smoke() -> None:
-    _smoke_test_task(CommonsenseQACloze)
-    _smoke_test_task(CommonsenseQAFullTextCloze)
-    _smoke_test_task(CommonsenseQAMC)
-    _smoke_test_task(CommonsenseQAMC_OLMES)
 
 
 @pytest.mark.cpu_slow
@@ -96,18 +78,10 @@ def test_social_iqa_tasks_smoke() -> None:
 
 
 @pytest.mark.cpu_slow
-def test_medqa_tasks_smoke() -> None:
-    _smoke_test_task(MedQACloze)
-    _smoke_test_task(MedQAMC)
-    _smoke_test_task(MedQAMC_OLMES)
-
-
-@pytest.mark.cpu_slow
 @pytest.mark.slow_download
 def test_olmes_variants_smoke() -> None:
     for task_cls in (
         ARC_OLMES,
-        COPA_OLMES,
         GPQA_OLMES,  # gated; skipped when not authenticated
         MMLU_PRO_OLMES,
         WINOGRANDE_OLMES,
@@ -118,12 +92,6 @@ def test_olmes_variants_smoke() -> None:
             if "gated" in str(e).lower():
                 continue  # skip this task only when gated and not authenticated
             raise
-
-
-@pytest.mark.cpu_slow
-def test_copa_harness_smoke() -> None:
-    _smoke_test_task(COPAEvalHarness)
-    _smoke_test_task(COPA_IDKEvalHarness)
 
 
 @pytest.mark.cpu_slow
@@ -141,13 +109,6 @@ def test_humaneval_bpb_smoke() -> None:
 @pytest.mark.cpu_slow
 def test_mbpp_bpb_smoke() -> None:
     _smoke_test_task(MBPPBPB)
-
-
-@pytest.mark.cpu_slow
-def test_sciq_olmes_tasks_smoke() -> None:
-    _smoke_test_task(SCIQ_OLMES)
-    _smoke_test_task(SCIQ_IDK)
-    _smoke_test_task(SCIQEvalHarness_IDK)
 
 
 @pytest.mark.cpu_slow
