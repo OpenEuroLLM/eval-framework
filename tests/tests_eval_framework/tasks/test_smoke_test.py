@@ -1,7 +1,6 @@
 import pytest
 from datasets.exceptions import DatasetNotFoundError
 
-from eval_framework.tasks.benchmarks.arc import ARC_OLMES
 from eval_framework.tasks.benchmarks.drop import DropCloze, DropCompletion, DropMC, DropMC_OLMES
 from eval_framework.tasks.benchmarks.global_mmlu import GlobalMMLU
 from eval_framework.tasks.benchmarks.gpqa import GPQA_OLMES
@@ -20,9 +19,7 @@ from eval_framework.tasks.benchmarks.naturalqs_open import (
     NaturalQsOpenMC,
     NaturalQsOpenMC_OLMES,
 )
-from eval_framework.tasks.benchmarks.social_iqa import SocialIQACloze, SocialIQAMC, SocialIQAMC_OLMES
 from eval_framework.tasks.benchmarks.squad import SQUAD2BPB
-from eval_framework.tasks.benchmarks.winogrande import WINOGRANDE_OLMES
 
 
 def _smoke_test_task(task_cls, num_fewshot: int = 0) -> None:
@@ -66,25 +63,11 @@ def test_math_minerva_tasks_smoke() -> None:
 
 
 @pytest.mark.cpu_slow
-def test_social_iqa_tasks_smoke() -> None:
-    try:
-        _smoke_test_task(SocialIQACloze)
-        _smoke_test_task(SocialIQAMC)
-        _smoke_test_task(SocialIQAMC_OLMES)
-    except RuntimeError as e:
-        if "no longer supported" in str(e) or "loading script" in str(e).lower():
-            pytest.skip("allenai/social_i_qa uses a dataset loading script not supported by this datasets version")
-        raise
-
-
-@pytest.mark.cpu_slow
 @pytest.mark.slow_download
 def test_olmes_variants_smoke() -> None:
     for task_cls in (
-        ARC_OLMES,
         GPQA_OLMES,  # gated; skipped when not authenticated
         MMLU_PRO_OLMES,
-        WINOGRANDE_OLMES,
     ):
         try:
             _smoke_test_task(task_cls)

@@ -59,6 +59,18 @@ class DatasetPolicy(ABC):
         """Markdown for the task's ``## Dataset`` doc section, describing where the dataset comes from."""
         ...
 
+    def subset(self, keep: Callable[[dict[str, Any]], bool], description: str | None = None) -> "Subset":
+        """Restrict this policy's dataset to the rows for which ``keep`` returns true (see ``Subset``).
+
+        ``description`` names the resulting subset for the rendered dataset docs (e.g. "the diamond subset").
+        """
+        return Subset(self, keep, description)
+
+    def subject_encoded_in_column(self, config: str, column: str) -> "SubjectColumn":
+        """By default the loaded config names the subject; call this when the subject is instead encoded in
+        a ``column`` of a single ``config`` (see ``SubjectColumn``)."""
+        return SubjectColumn(self, config, column)
+
 
 @final
 class _SubsetLoader(DatasetLoader):
@@ -83,12 +95,16 @@ class Subset(DatasetPolicy):
     """Restricts another policy's dataset to the rows for which ``keep`` returns true, in every split.
 
     A benchmark whose items are a row-filtered subset of a larger dataset (e.g. GPQA's diamond subset,
-    HLE's natively-multiple-choice subset) wraps the base policy in a ``Subset``.
+    HLE's natively-multiple-choice subset) wraps the base policy in a ``Subset``. ``description`` names that
+    subset for the rendered dataset docs; without it the docs only note that some rows are dropped.
     """
 
-    def __init__(self, inner: DatasetPolicy, keep: Callable[[dict[str, Any]], bool]) -> None:
+    def __init__(
+        self, inner: DatasetPolicy, keep: Callable[[dict[str, Any]], bool], description: str | None = None
+    ) -> None:
         self._inner = inner
         self._keep = keep
+        self._description = description
 
     @override
     def loader(self, custom_hf_revision: str | None) -> DatasetLoader:
@@ -96,4 +112,49 @@ class Subset(DatasetPolicy):
 
     @override
     def documentation(self) -> str:
-        return self._inner.documentation()
+        return f"{self._inner.documentation()}\n- Restricted to {self._description or 'a subset of its rows'}."
+
+
+@final
+class _SubjectColumnLoader(DatasetLoader):
+    """Loads a fixed ``config`` from the inner loader, keeping only the rows whose ``column`` equals the
+    requested subject (``name``)."""
+
+    def __init__(self, inner: DatasetLoader, config: str, column: str) -> None:
+        self._inner = inner
+        self._config = config
+        self._column = column
+
+    @override
+    def load(self, name: str | None) -> DatasetDict:
+        loaded = self._inner.load(self._config)
+        return DatasetDict(
+            {split: data.filter(lambda row: row[self._column] == name) for split, data in loaded.items()}
+        )
+
+    @override
+    def metadata(self) -> dict[str, str]:
+        return self._inner.metadata()
+
+
+@final
+class SubjectColumn(DatasetPolicy):
+    """Use this in case the raw dataset encodes the subject in a column, rather than the load
+    configuration.
+    """
+
+    def __init__(self, inner: DatasetPolicy, config: str, column: str) -> None:
+        self._inner = inner
+        self._config = config
+        self._column = column
+
+    @override
+    def loader(self, custom_hf_revision: str | None) -> DatasetLoader:
+        return _SubjectColumnLoader(self._inner.loader(custom_hf_revision), self._config, self._column)
+
+    @override
+    def documentation(self) -> str:
+        return (
+            f"{self._inner.documentation()}\n"
+            f"- Subjects share the single `{self._config}` config and are split by the `{self._column}` column."
+        )
