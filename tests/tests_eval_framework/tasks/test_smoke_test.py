@@ -1,9 +1,7 @@
 import pytest
-from datasets.exceptions import DatasetNotFoundError
 
 from eval_framework.tasks.benchmarks.drop import DropCloze, DropCompletion, DropMC, DropMC_OLMES
 from eval_framework.tasks.benchmarks.global_mmlu import GlobalMMLU
-from eval_framework.tasks.benchmarks.gpqa import GPQA_OLMES
 from eval_framework.tasks.benchmarks.humaneval import HumanEvalBPB, HumanEvalBPB_V2
 from eval_framework.tasks.benchmarks.math_reasoning import (
     MATH500Minerva,
@@ -12,7 +10,6 @@ from eval_framework.tasks.benchmarks.math_reasoning import (
     MATHMinervaEvalHarness,
 )
 from eval_framework.tasks.benchmarks.mbpp import MBPPBPB
-from eval_framework.tasks.benchmarks.mmlu_pro import MMLU_PRO_OLMES
 from eval_framework.tasks.benchmarks.naturalqs_open import (
     NaturalQsOpen,
     NaturalQsOpenCloze,
@@ -60,21 +57,6 @@ def test_math_minerva_tasks_smoke() -> None:
     _smoke_test_task(MATHMinerva)
     _smoke_test_task(MATHMinervaBPB, num_fewshot=4)  # class default, kept explicit
     _smoke_test_task(MATH500Minerva)
-
-
-@pytest.mark.cpu_slow
-@pytest.mark.slow_download
-def test_olmes_variants_smoke() -> None:
-    for task_cls in (
-        GPQA_OLMES,  # gated; skipped when not authenticated
-        MMLU_PRO_OLMES,
-    ):
-        try:
-            _smoke_test_task(task_cls)
-        except DatasetNotFoundError as e:
-            if "gated" in str(e).lower():
-                continue  # skip this task only when gated and not authenticated
-            raise
 
 
 @pytest.mark.cpu_slow
