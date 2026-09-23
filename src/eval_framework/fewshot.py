@@ -7,8 +7,10 @@ a benchmark declare "0-shot only" structurally, so the constraint is enforced at
 placeholder split.
 """
 
+import logging
 import random
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, final, override
 
@@ -16,6 +18,8 @@ from eval_framework.choices import ChoiceReader
 
 if TYPE_CHECKING:
     from eval_framework.tasks.task_style import TaskStyler
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -33,9 +37,10 @@ class FewShot(ABC):
         when the policy draws none."""
 
     @abstractmethod
-    def check(self, num_fewshot: int) -> None:
-        """Raise if ``num_fewshot`` is incompatible with this policy. Called when the eval is created,
-        so an unsupported request fails before any dataset is touched."""
+    def check(self, num_fewshot: int) -> int:
+        """Resolve the effective shot count, called when the eval is created (before any dataset is touched).
+        Usually returns ``num_fewshot`` unchanged, but raises if the request is unsupported, or — for a
+        fixed-shot policy — pins the count (warning if the request differs)."""
 
     @abstractmethod
     def examples(
@@ -71,8 +76,8 @@ class SampledFewShot(FewShot):
         return self._split
 
     @override
-    def check(self, num_fewshot: int) -> None:
-        return  # any shot count is supported
+    def check(self, num_fewshot: int) -> int:
+        return num_fewshot  # any shot count is supported
 
     @override
     def examples(
@@ -121,6 +126,52 @@ class SampledFewShot(FewShot):
 
 
 @final
+class PredefinedFewShot(FewShot):
+    """A fixed, hand-written set of demonstrations (not drawn from the dataset), each rendered by ``render``.
+    The shot count is pinned to ``count`` — a benchmark whose prompt uses a canonical fixed few-shot block —
+    warning (rather than sampling differently) if a different count is requested."""
+
+    def __init__(
+        self,
+        items: list[dict[str, Any]],
+        render: Callable[[dict[str, Any]], FewshotExample],
+        *,
+        count: int,
+        label: str,
+    ) -> None:
+        self._items = items
+        self._render = render
+        self._count = count
+        self._label = label
+
+    @override
+    def split(self) -> str | None:
+        return None  # predefined exemplars, no dataset split
+
+    @override
+    def check(self, num_fewshot: int) -> int:
+        if num_fewshot != self._count:
+            logger.warning(f"{self._label} uses a fixed num_fewshot of {self._count}. Got {num_fewshot}.")
+        return self._count
+
+    @override
+    def examples(
+        self,
+        dataset: dict[str, list[dict[str, Any]]],
+        *,
+        sample_split: str,
+        item: dict[str, Any],
+        num_fewshot: int,
+        rnd: random.Random,
+    ) -> list[FewshotExample]:
+        return [self._render(demonstration) for demonstration in self._items[:num_fewshot]]
+
+    @override
+    def metadata(self) -> dict[str, str]:
+        return {"fewshot_split": "predefined"}
+
+
+@final
 class NoFewShot(FewShot):
     """A benchmark that only runs 0-shot: it names no source split and rejects any few-shot request."""
 
@@ -129,9 +180,10 @@ class NoFewShot(FewShot):
         return None
 
     @override
-    def check(self, num_fewshot: int) -> None:
+    def check(self, num_fewshot: int) -> int:
         if num_fewshot != 0:
             raise ValueError(f"This benchmark is 0-shot only; num_fewshot must be 0, got {num_fewshot}.")
+        return 0
 
     @override
     def examples(

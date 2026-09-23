@@ -1,14 +1,7 @@
 import pytest
 
 from eval_framework.tasks.benchmarks.drop import DropCloze, DropCompletion, DropMC, DropMC_OLMES
-from eval_framework.tasks.benchmarks.global_mmlu import GlobalMMLU
 from eval_framework.tasks.benchmarks.humaneval import HumanEvalBPB, HumanEvalBPB_V2
-from eval_framework.tasks.benchmarks.math_reasoning import (
-    MATH500Minerva,
-    MATHMinerva,
-    MATHMinervaBPB,
-    MATHMinervaEvalHarness,
-)
 from eval_framework.tasks.benchmarks.mbpp import MBPPBPB
 from eval_framework.tasks.benchmarks.naturalqs_open import (
     NaturalQsOpen,
@@ -48,21 +41,6 @@ def test_naturalqs_open_tasks_smoke() -> None:
     _smoke_test_task(NaturalQsOpenCloze)
     _smoke_test_task(NaturalQsOpenMC)
     _smoke_test_task(NaturalQsOpenMC_OLMES)
-
-
-@pytest.mark.cpu_slow
-@pytest.mark.slow_download
-def test_math_minerva_tasks_smoke() -> None:
-    _smoke_test_task(MATHMinervaEvalHarness)
-    _smoke_test_task(MATHMinerva)
-    _smoke_test_task(MATHMinervaBPB, num_fewshot=4)  # class default, kept explicit
-    _smoke_test_task(MATH500Minerva)
-
-
-@pytest.mark.cpu_slow
-@pytest.mark.slow_download
-def test_global_mmlu_smoke() -> None:
-    _smoke_test_task(GlobalMMLU)
 
 
 @pytest.mark.cpu_slow
