@@ -15,7 +15,7 @@ from eval_framework.choices import ChoiceFields, ChoiceReader
 from eval_framework.composed import ComposedBenchmark
 from eval_framework.contract import Benchmark
 from eval_framework.eval_kind import Choice, Generative
-from eval_framework.fewshot import FewshotExample, PredefinedFewShot
+from eval_framework.fewshot import FewShot, FewshotExample, FunctionRenderer, Predefined
 from eval_framework.metrics.completion.accuracy_completion import AccuracyCompletionOLMES
 from eval_framework.subjects import ListOfSubjects
 from eval_framework.tasks.base import Language
@@ -166,17 +166,19 @@ def _gsm8k_dataset(dataset: DatasetPolicy | None) -> DatasetPolicy:
 
 
 def gsm8k_olmes(dataset: DatasetPolicy | None = None) -> Benchmark:
+    kind = Generative(
+        build_prompt=lambda item: f"Question: {item['question']}\nAnswer:",
+        cue="",  # no assistant cue — the model continues the answer
+        ground_truth=lambda item: clean_short_answer(item["answer"]),
+        metrics=[AccuracyCompletionOLMES],
+    )
+    fewshot = FewShot(Predefined(FEWSHOT_ITEMS, count=_NUM_FEWSHOT, label="GSM8K"), FunctionRenderer(_generative_demo))
     return ComposedBenchmark.compose(
         id="GSM8K_OLMES",
-        kind=Generative(
-            build_prompt=lambda item: f"Question: {item['question']}\nAnswer:",
-            cue="",  # no assistant cue — the model continues the answer
-            ground_truth=lambda item: clean_short_answer(item["answer"]),
-            metrics=[AccuracyCompletionOLMES],
-        ),
+        kind=kind,
         answer=ExtractFromCompletion(clean_short_answer, _STOP_SEQUENCES, max_tokens=_MAX_TOKENS),
         sample_split="test",
-        fewshot=PredefinedFewShot(FEWSHOT_ITEMS, _generative_demo, count=_NUM_FEWSHOT, label="GSM8K"),
+        fewshot=fewshot,
         subjects=ListOfSubjects(["main"]),
         dataset_policy=_gsm8k_dataset(dataset),
         language=Language.ENG,
@@ -190,7 +192,7 @@ def gsm8k_bpb(dataset: DatasetPolicy | None = None) -> Benchmark:
         kind=Choice(_Gsm8kBpbReader(), styler),
         answer=PickFromCandidates(),
         sample_split="test",
-        fewshot=PredefinedFewShot(FEWSHOT_ITEMS, _bpb_demo, count=_NUM_FEWSHOT, label="GSM8K"),
+        fewshot=FewShot(Predefined(FEWSHOT_ITEMS, count=_NUM_FEWSHOT, label="GSM8K"), FunctionRenderer(_bpb_demo)),
         subjects=ListOfSubjects(["main"]),
         dataset_policy=_gsm8k_dataset(dataset),
         language=Language.ENG,

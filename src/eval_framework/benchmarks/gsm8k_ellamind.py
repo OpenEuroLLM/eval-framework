@@ -16,7 +16,7 @@ from eval_framework.choices import ChoiceFields, ChoiceReader
 from eval_framework.composed import ComposedBenchmark
 from eval_framework.contract import Benchmark
 from eval_framework.eval_kind import Generative
-from eval_framework.fewshot import SampledFewShot
+from eval_framework.fewshot import ChoiceRenderer, FewShot, SampleSplit
 from eval_framework.metrics.completion.accuracy_completion import AccuracyCompletion
 from eval_framework.subjects import ListOfSubjects
 from eval_framework.tasks.base import Language
@@ -67,17 +67,19 @@ def _ellamind_dataset(dataset: DatasetPolicy | None) -> DatasetPolicy:
 def gsm8k_ellamind_de_platinum(dataset: DatasetPolicy | None = None) -> Benchmark:
     # Demonstrations are sampled from the test split and rendered in the same German answer format; the eval
     # itself is free-form (the generative kind), so few-shot rendering and eval are separate policies.
-    fewshot = SampledFewShot(
-        _GenerativeFewshotReader(), ClozeStyle(question_prefix="Frage: ", cue_text="Antwort:"), "test"
+    fewshot = FewShot(
+        SampleSplit(),
+        ChoiceRenderer(_GenerativeFewshotReader(), ClozeStyle(question_prefix="Frage: ", cue_text="Antwort:")),
+    )
+    kind = Generative(
+        build_prompt=lambda item: f"Frage: {item['question']}\n",
+        cue="Antwort:",
+        ground_truth=lambda item: _normalize_number(item["final_answer"]),
+        metrics=[AccuracyCompletion],
     )
     return ComposedBenchmark.compose(
         id="GSM8K_Ellamind_DE_Platinum",
-        kind=Generative(
-            build_prompt=lambda item: f"Frage: {item['question']}\n",
-            cue="Antwort:",
-            ground_truth=lambda item: _normalize_number(item["final_answer"]),
-            metrics=[AccuracyCompletion],
-        ),
+        kind=kind,
         answer=ExtractFromCompletion(_extract_final_integer, _STOP_SEQUENCES, max_tokens=_MAX_TOKENS),
         sample_split="test",
         fewshot=fewshot,

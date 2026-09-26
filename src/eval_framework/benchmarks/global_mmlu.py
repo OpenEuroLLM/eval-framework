@@ -4,7 +4,6 @@ MMLU translated into many languages; we evaluate French, German, Spanish, Italia
 """
 
 import ast
-import random
 from itertools import product
 from typing import TYPE_CHECKING, Any, final, override
 
@@ -14,8 +13,8 @@ from eval_framework.answer import PickFromCandidates
 from eval_framework.benchmarks.mmlu import MMLU_SUBJECTS
 from eval_framework.composed import ComposedBenchmark, LanguageSpec
 from eval_framework.contract import Benchmark
-from eval_framework.eval_kind import EvalKind, SampleBody
-from eval_framework.fewshot import FewShot, FewshotExample
+from eval_framework.eval_kind import EvalKind, SampleBody, assemble_messages
+from eval_framework.fewshot import FewShot, FewshotExample, FewShotSplit, FunctionRenderer
 from eval_framework.metrics.loglikelihood.accuracy_loglikelihood import (
     AccuracyBayesianLoglikelihood,
     AccuracyLoglikelihood,
@@ -28,6 +27,7 @@ from eval_framework.tasks.base import Language
 from eval_framework.tasks.dataset_loading import DatasetLoader, DatasetPolicy
 from eval_framework.tasks.dataset_revisions import pinned_by_framework
 from eval_framework.tasks.utils import get_n_letters
+from template_formatting.formatter import Message
 
 if TYPE_CHECKING:
     from eval_framework.metrics.base import BaseMetric
@@ -514,8 +514,13 @@ class _GlobalMmluLoader(DatasetLoader):
         assert name is not None, "GlobalMMLU subjects always carry a (language, subject) load key."
         lang, subject = _lang_and_subject(name)
         loaded = self._inner.load(lang)
+        # Tag each row with its language (implicit in the config, absent from the row) so a demonstration can
+        # be rendered from the row alone — the localized "Question:"/"Answer:" labels need it.
         return DatasetDict(
-            {split: data.filter(lambda row: row["subject"] == subject) for split, data in loaded.items()}
+            {
+                split: data.filter(lambda row: row["subject"] == subject).map(lambda row: {"language": lang})
+                for split, data in loaded.items()
+            }
         )
 
     @override
@@ -561,9 +566,10 @@ class _GlobalMmluChoice(EvalKind):
         ]
 
     @override
-    def initial_prompt(self, subject_label: str) -> str | None:
+    def messages(self, body: SampleBody, *, fewshot: list[FewshotExample], subject_label: str) -> list[Message]:
         lang, subject = _lang_and_subject(subject_label)
-        return f"{LANGUAGE_INITIAL_PROMPT_TEXT_MAP[lang]} {LANGUAGE_SUBJECTS_MAP[lang][subject]}."
+        preamble = f"{LANGUAGE_INITIAL_PROMPT_TEXT_MAP[lang]} {LANGUAGE_SUBJECTS_MAP[lang][subject]}."
+        return assemble_messages(fewshot, body, initial_prompt=preamble)
 
     @override
     def samples(self, item: dict[str, Any]) -> list[SampleBody]:
@@ -578,46 +584,14 @@ class _GlobalMmluChoice(EvalKind):
         ]
 
 
-@final
-class _GlobalMmluFewShot(FewShot):
-    def __init__(self, split: str) -> None:
-        self._split = split
-
-    @override
-    def split(self) -> str | None:
-        return self._split
-
-    @override
-    def check(self, num_fewshot: int) -> int:
-        return num_fewshot  # any shot count is supported
-
-    @override
-    def examples(
-        self,
-        dataset: dict[str, list[dict[str, Any]]],
-        *,
-        sample_split: str,
-        item: dict[str, Any],
-        num_fewshot: int,
-        rnd: random.Random,
-    ) -> list[FewshotExample]:
-        if num_fewshot <= 0:
-            return []
-        pool = dataset[self._split]
-        if self._split == sample_split:
-            drawn = rnd.sample(pool, num_fewshot + 1)
-            drawn = [demo for demo in drawn if demo != item][:num_fewshot]
-        else:
-            drawn = rnd.sample(pool, num_fewshot)
-        lang, _ = _lang_and_subject(item["subject"])
-        return [
-            FewshotExample(prompt=_mc_prompt(demo, lang), answer=f"{LANGUAGE_ANSWER_TEXT_MAP[lang]}: {demo['answer']}")
-            for demo in drawn
-        ]
-
-    @override
-    def metadata(self) -> dict[str, str]:
-        return {"fewshot_split": self._split}
+def _global_mmlu_demo(row: dict[str, Any]) -> FewshotExample:
+    # The demonstration is rendered in the row's own language; the pool is the same (language, subject) slice
+    # as the eval item, so this matches the item's language.
+    lang = row["language"]
+    return FewshotExample(
+        prompt=_mc_prompt(row, lang),
+        answer=f"{LANGUAGE_ANSWER_TEXT_MAP[lang]}: {row['answer']}",
+    )
 
 
 def _global_mmlu_dataset(dataset: DatasetPolicy | None) -> DatasetPolicy:
@@ -630,7 +604,7 @@ def _global_mmlu(id: str, subjects: ListOfSubjects, language: LanguageSpec, data
         kind=_GlobalMmluChoice(),
         answer=PickFromCandidates(),
         sample_split="test",
-        fewshot=_GlobalMmluFewShot("dev"),
+        fewshot=FewShot(FewShotSplit("dev"), FunctionRenderer(_global_mmlu_demo)),
         subjects=subjects,
         dataset_policy=_global_mmlu_dataset(dataset),
         language=language,

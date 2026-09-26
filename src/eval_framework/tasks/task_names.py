@@ -3,9 +3,11 @@ from enum import Enum
 from eval_framework.benchmarks.arc import ARC_BENCHMARKS
 from eval_framework.benchmarks.arc_de import ARC_DE_BENCHMARK
 from eval_framework.benchmarks.arc_ellamind import ARC_ELLAMIND_BENCHMARKS
+from eval_framework.benchmarks.bigcodebench import BIGCODEBENCH_BENCHMARKS
 from eval_framework.benchmarks.copa import COPA_BENCHMARKS
 from eval_framework.benchmarks.csqa import CSQA_BENCHMARKS
 from eval_framework.benchmarks.csqa_ellamind import CSQA_ELLAMIND_BENCHMARKS
+from eval_framework.benchmarks.drop import DROP_BENCHMARKS
 from eval_framework.benchmarks.global_mmlu import GLOBAL_MMLU_BENCHMARKS
 from eval_framework.benchmarks.goldenswag import GOLDENSWAG_BENCHMARKS
 from eval_framework.benchmarks.gpqa import GPQA_BENCHMARKS
@@ -16,20 +18,29 @@ from eval_framework.benchmarks.hellaswag import HELLASWAG_BENCHMARKS
 from eval_framework.benchmarks.hellaswag_ellamind import HELLASWAG_ELLAMIND_BENCHMARKS
 from eval_framework.benchmarks.hendrycks_math_ellamind import HENDRYCKS_MATH_ELLAMIND_BENCHMARKS
 from eval_framework.benchmarks.hle_ellamind import HLE_ELLAMIND_BENCHMARKS
+from eval_framework.benchmarks.humaneval import HUMANEVAL_BENCHMARKS
+from eval_framework.benchmarks.humaneval_ellamind import HUMANEVAL_ELLAMIND_BENCHMARKS
+from eval_framework.benchmarks.humaneval_plus import HUMANEVAL_PLUS_BENCHMARKS
+from eval_framework.benchmarks.ifeval import IFEVAL_BENCHMARKS
 from eval_framework.benchmarks.math_reasoning import MATH_REASONING_BENCHMARKS
+from eval_framework.benchmarks.mbpp import MBPP_BENCHMARKS
+from eval_framework.benchmarks.mbpp_ellamind import MBPP_ELLAMIND_BENCHMARKS
 from eval_framework.benchmarks.medqa import MEDQA_BENCHMARKS
 from eval_framework.benchmarks.mmlu import MMLU_BENCHMARKS
 from eval_framework.benchmarks.mmlu_pro import MMLU_PRO_BENCHMARKS
+from eval_framework.benchmarks.multipl_e import MULTIPL_E_BENCHMARKS
+from eval_framework.benchmarks.naturalqs_open import NATURALQS_OPEN_BENCHMARKS
 from eval_framework.benchmarks.piqa import PIQA_BENCHMARKS
 from eval_framework.benchmarks.piqa_ellamind import PIQA_ELLAMIND_BENCHMARKS
 from eval_framework.benchmarks.sciq import SCIQ_BENCHMARKS
 from eval_framework.benchmarks.simpleqa_ellamind import SIMPLEQA_ELLAMIND_BENCHMARKS
 from eval_framework.benchmarks.siqa_ellamind import SIQA_ELLAMIND_BENCHMARKS
 from eval_framework.benchmarks.social_iqa import SOCIAL_IQA_BENCHMARKS
+from eval_framework.benchmarks.squad import SQUAD_BENCHMARKS
 from eval_framework.benchmarks.winogrande import WINOGRANDE_BENCHMARKS
 from eval_framework.benchmarks.winogrande_ellamind import WINOGRANDE_ELLAMIND_BENCHMARKS
 from eval_framework.tasks.base import BaseTask
-from eval_framework.tasks.registry import Registry, register_lazy_task
+from eval_framework.tasks.registry import Registry
 from eval_framework.tasks.registry import registry as global_registry
 
 
@@ -131,29 +142,26 @@ def register_mmlu_tasks(registry: Registry) -> None:
 
 def register_humaneval_tasks(registry: Registry) -> None:
     """Register humaneval benchmark tasks."""
-    register_lazy_task("eval_framework.tasks.benchmarks.humaneval.HumanEvalBPB", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.humaneval.HumanEvalBPB_V2", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.humaneval.HumanEval_OLMES", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.humaneval.HumanEval_OLMES_V2", registry=registry)
+    for benchmark in HUMANEVAL_BENCHMARKS:
+        registry.add(benchmark)
 
 
 def register_humaneval_plus_tasks(registry: Registry) -> None:
     """Register humaneval_plus benchmark tasks."""
-    register_lazy_task("eval_framework.tasks.benchmarks.humaneval_plus.HumanEvalPlus", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.humaneval_plus.HumanEvalPlusBPB", registry=registry)
+    for benchmark in HUMANEVAL_PLUS_BENCHMARKS:
+        registry.add(benchmark)
 
 
 def register_mbpp_tasks(registry: Registry) -> None:
     """Register mbpp benchmark tasks."""
-    register_lazy_task("eval_framework.tasks.benchmarks.mbpp.MBPPBPB", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.mbpp.MBPP_OLMES", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.mbpp.MBPP_EvalPlus", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.mbpp.MBPP_BPB_EvalPlus", registry=registry)
+    for benchmark in MBPP_BENCHMARKS:
+        registry.add(benchmark)
 
 
 def register_bigcodebench_tasks(registry: Registry) -> None:
     """Register bigcodebench benchmark tasks."""
-    register_lazy_task("eval_framework.tasks.benchmarks.bigcodebench.BigCodeBench_OLMES", registry=registry)
+    for benchmark in BIGCODEBENCH_BENCHMARKS:
+        registry.add(benchmark)
 
 
 def register_arc_de_tasks(registry: Registry) -> None:
@@ -174,25 +182,15 @@ def register_goldenswag_tasks(registry: Registry) -> None:
 
 
 def register_ifeval_tasks(registry: Registry) -> None:
-    """Register ifeval benchmark tasks."""
-    register_lazy_task("eval_framework.tasks.benchmarks.ifeval.IFEval", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.ifeval.IFEvalDe", registry=registry)
+    """Register ifeval benchmark tasks (composed: IFEval, IFEvalDe)."""
+    for benchmark in IFEVAL_BENCHMARKS:
+        registry.add(benchmark)
 
 
 def register_multipl_e_tasks(registry: Registry) -> None:
     """Register multipl_e benchmark tasks."""
-    register_lazy_task("eval_framework.tasks.benchmarks.multipl_e.MultiPLEHumanEvalCpp", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.multipl_e.MultiPLEHumanEvalJava", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.multipl_e.MultiPLEHumanEvalJs", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.multipl_e.MultiPLEHumanEvalPhp", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.multipl_e.MultiPLEHumanEvalRs", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.multipl_e.MultiPLEHumanEvalSh", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.multipl_e.MultiPLEMBPPCpp", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.multipl_e.MultiPLEMBPPJava", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.multipl_e.MultiPLEMBPPJs", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.multipl_e.MultiPLEMBPPPhp", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.multipl_e.MultiPLEMBPPRs", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.multipl_e.MultiPLEMBPPSh", registry=registry)
+    for benchmark in MULTIPL_E_BENCHMARKS:
+        registry.add(benchmark)
 
 
 def register_mmlu_pro_tasks(registry: Registry) -> None:
@@ -214,10 +212,9 @@ def register_sciq_tasks(registry: Registry) -> None:
 
 
 def register_squad_tasks(registry: Registry) -> None:
-    """Register squad benchmark tasks."""
-    register_lazy_task("eval_framework.tasks.benchmarks.squad.SQuAD_OLMES", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.squad.SQuAD2_MA", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.squad.SQuAD2_MA_NO_SYSPROMPT", registry=registry)
+    """Register squad benchmark tasks (composed: SQuAD_OLMES, SQuAD2_MA, SQuAD2_MA_NO_SYSPROMPT)."""
+    for benchmark in SQUAD_BENCHMARKS:
+        registry.add(benchmark)
 
 
 def register_winogrande_tasks(registry: Registry) -> None:
@@ -233,15 +230,15 @@ def register_csqa_tasks(registry: Registry) -> None:
 
 
 def register_drop_tasks(registry: Registry) -> None:
-    """Register drop benchmark tasks."""
-    register_lazy_task("eval_framework.tasks.benchmarks.drop.DropCompletion_OLMES", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.drop.DropMC_OLMES", registry=registry)
+    """Register drop benchmark tasks (composed: DropCompletion_OLMES, DropMC_OLMES)."""
+    for benchmark in DROP_BENCHMARKS:
+        registry.add(benchmark)
 
 
 def register_naturalqs_open_tasks(registry: Registry) -> None:
-    """Register naturalqs_open benchmark tasks."""
-    register_lazy_task("eval_framework.tasks.benchmarks.naturalqs_open.NaturalQsOpen", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.naturalqs_open.NaturalQsOpenMC_OLMES", registry=registry)
+    """Register naturalqs_open benchmark tasks (composed: NaturalQsOpen, NaturalQsOpenMC_OLMES)."""
+    for benchmark in NATURALQS_OPEN_BENCHMARKS:
+        registry.add(benchmark)
 
 
 def register_social_iqa_tasks(registry: Registry) -> None:
@@ -300,20 +297,14 @@ def register_hle_ellamind_tasks(registry: Registry) -> None:
 
 def register_humaneval_ellamind_tasks(registry: Registry) -> None:
     """Register humaneval_ellamind benchmark tasks."""
-    register_lazy_task("eval_framework.tasks.benchmarks.humaneval_ellamind.HumanEvalDE_OLMES", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.humaneval_ellamind.HumanEvalDE_BPB_OLMES", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.humaneval_ellamind.HumanEvalDE_BPB_OLMES_V2", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.humaneval_ellamind.HumanEvalDE_OLMES_V2", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.humaneval_ellamind.HumanEvalDEInstruct", registry=registry)
+    for benchmark in HUMANEVAL_ELLAMIND_BENCHMARKS:
+        registry.add(benchmark)
 
 
 def register_mbpp_ellamind_tasks(registry: Registry) -> None:
     """Register mbpp_ellamind benchmark tasks."""
-    register_lazy_task("eval_framework.tasks.benchmarks.mbpp_ellamind.MBPPDE_OLMES", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.mbpp_ellamind.MBPPDE_BPB_OLMES", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.mbpp_ellamind.MBPPDE_EvalPlus", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.mbpp_ellamind.MBPPDE_BPB_EvalPlus", registry=registry)
-    register_lazy_task("eval_framework.tasks.benchmarks.mbpp_ellamind.MBPPDEEvalPlusInstruct", registry=registry)
+    for benchmark in MBPP_ELLAMIND_BENCHMARKS:
+        registry.add(benchmark)
 
 
 def register_piqa_ellamind_tasks(registry: Registry) -> None:
