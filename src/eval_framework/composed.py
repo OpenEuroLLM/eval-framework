@@ -305,12 +305,8 @@ class ComposedBenchmark(Benchmark):
         num_fewshot: int,
         custom_subjects: list[str] | None,
         custom_hf_revision: str | None,
-        user_prompt_suffix: str | None = None,
         seed: int | None = None,
     ) -> Eval:
-        # Composed evals have no completion path yet, so a completion-only user prompt suffix is rejected.
-        if user_prompt_suffix is not None:
-            raise ValueError("user_prompt_suffix is only supported for completion tasks.")
         # Bind the shot count into a per-run generator now, before any data loads, so an unsupported request
         # (e.g. few-shot against a 0-shot-only task) fails fast.
         fewshot = self._fewshot.bind(num_fewshot)

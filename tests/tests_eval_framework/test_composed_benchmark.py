@@ -1,6 +1,5 @@
 import random
 from typing import Any, override
-from unittest.mock import patch
 
 import pytest
 from datasets import Dataset, DatasetDict
@@ -16,7 +15,6 @@ from eval_framework.metrics.efficiency.bytes_per_sequence_position import (
     BytesLoglikelihood,
     SequencePositionsLoglikelihood,
 )
-from eval_framework.run import parse_args
 from eval_framework.subjects import ListOfSubjects, Subject, Subjects, SubjectsSelector
 from eval_framework.tasks.dataset_loading import DatasetLoader, DatasetPolicy
 from eval_framework.tasks.task_style import TaskStyle, TaskStyler
@@ -67,7 +65,7 @@ _DUMMY_EVAL_SUBJECTS: Subjects = (Subject(load_key="subject", label="subject"),)
 
 class _DummyStyler(TaskStyler):
     """A dummy styler for tests that need a ComposedEval with a (loglikelihood) styler but never render
-    a prompt — e.g. asserting a user_prompt_suffix is rejected."""
+    a prompt."""
 
     response_type = ResponseType.LOGLIKELIHOODS
     metrics: list[type[BaseMetric]] = []
@@ -262,19 +260,6 @@ def test_id_stays_on_benchmark_display_name_reaches_eval() -> None:
     # id is a Benchmark concept; only display_name reaches the eval
     task = benchmark.create(0, None, None)
     assert task.display_name() == "Nice Name"
-
-
-def test_user_prompt_suffix_rejected() -> None:
-    # Composed evals have no completion path, so create rejects a user prompt suffix
-    with pytest.raises(ValueError, match="only supported for completion tasks"):
-        _make_benchmark().create(0, None, None, user_prompt_suffix="/think_short")
-
-
-def test_cli_user_prompt_suffix_parsing() -> None:
-    with patch("sys.argv", ["run.py", "--user-prompt-suffix", "/think_short"]):
-        args = parse_args()
-
-    assert args.user_prompt_suffix == "/think_short"
 
 
 def test_metrics_combine_styler_and_response_type_metrics() -> None:
