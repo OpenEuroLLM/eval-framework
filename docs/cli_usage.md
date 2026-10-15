@@ -102,14 +102,15 @@ The context in which the evaluation is run.
 **`-h, --help`**
 Show help message and exit.
 
-## Running Hugging Face Models
+## Running Models Behind an OpenAI-Compatible Endpoint
 
-You can run models directly from Hugging Face Hub using the `HFLLM` class:
+Any model served through an OpenAI-compatible API (the OpenAI API itself, vLLM, TGI, ...) can be evaluated with the
+`OpenAIModel` class. The API key is read from `OPENAI_API_KEY`; pass `base_url` to target a self-hosted server:
 
 ```bash
 uv run eval_framework \
-    --llm-name 'eval_framework.llm.huggingface.HFLLM' \
-    --llm-args model_name="microsoft/DialoGPT-medium" formatter_name="Llama3Formatter" \
+    --llm-name 'eval_framework.llm.openai.OpenAIModel' \
+    --llm-args model_name="Qwen/Qwen3-0.6B" base_url="http://localhost:8000/v1" \
     --task-name "MMLU" \
     --task-subjects "abstract_algebra" \
     --output-dir ./eval_results \
@@ -117,35 +118,8 @@ uv run eval_framework \
     --num-samples 10
 ```
 
-This approach allows you to evaluate any model available on Hugging Face by specifying the `model_name` and appropriate `formatter_name` in the `--llm-args` parameter.
-
-## Configuring Sampling Parameters for vLLM Models
-
-vLLM models support configurable sampling parameters through the `--llm-args` parameter. You can specify individual sampling parameters using dot notation:
-
-```bash
-uv run eval_framework \
-    --llm-name 'eval_framework.llm.models.Qwen3_0_6B_VLLM' \
-    --llm-args sampling_params.temperature=0.7 sampling_params.top_p=0.95 sampling_params.max_tokens=150 \
-    --task-name "MMLU" \
-    --task-subjects "abstract_algebra" \
-    --output-dir ./eval_results \
-    --num-fewshot 5 \
-    --num-samples 10
-```
-
-You can also combine sampling parameters with other model arguments:
-
-```bash
-uv run eval_framework \
-    --llm-name 'eval_framework.llm.models.Qwen3_0_6B_VLLM' \
-    --llm-args max_model_len=2048 sampling_params.temperature=0.8 sampling_params.top_p=0.9 \
-    --task-name "MMLU" \
-    --task-subjects "abstract_algebra" \
-    --output-dir ./eval_results \
-    --num-fewshot 5 \
-    --num-samples 10
-```
+Every keyword argument of the `OpenAIModel` constructor can be set through `--llm-args`; see the
+[Model Arguments guide](model_arguments.md) for the full list.
 
 ## Running a Task Suite
 
@@ -189,7 +163,8 @@ Then pass the suite file to the CLI:
 
 ```bash
 uv run eval_framework \
-    --llm-name 'eval_framework.llm.models.Qwen3_0_6B_VLLM' \
+    --llm-name 'eval_framework.llm.openai.OpenAIModel' \
+    --llm-args model_name="gpt-4o-mini" \
     --task-suite my_suite.yaml \
     --output-dir ./eval_results
 ```

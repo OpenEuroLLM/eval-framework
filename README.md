@@ -25,7 +25,7 @@
 
 ## Other features
 
-- Flexible Model Integration: Supports models loaded via HuggingFace Transformers or custom implementations using the BaseLLM class.
+- Flexible Model Integration: Supports OpenAI-compatible endpoints, the Aleph Alpha API, or custom implementations using the BaseLLM class.
 - Custom Benchmarks: Easily add new benchmarks with minimal code using the BaseTask class.
 - Custom Metrics: Easily define new metrics using the BaseMetric class.
 - Perturbation Testing: Robustness analysis with configurable perturbation types and probabilities.
@@ -37,8 +37,7 @@ For full documentation, visit our [Docs Page](https://aleph-alpha-research.githu
 
 ## Quick Start
 
-The codebase is tested and compatible with Python 3.12 and PyTorch 2.5.
-You will also need the appropriate CUDA dependencies and version installed on your system for GPU support. Detailed installation instructions can be found [here](https://aleph-alpha-research.github.io/eval-framework/installation.html).
+The codebase is tested and compatible with Python 3.12. Detailed installation instructions can be found [here](https://aleph-alpha-research.github.io/eval-framework/installation.html).
 
 The easiest way to get started is by installing the library via `pip` and use it as an external dependency.
 ```
@@ -48,8 +47,6 @@ pip install eval_framework
 There are optional extras available to unlock specific features of the library:
 - `api` for inference using the aleph-alpha client.
 - `determined` for running jobs via determined.
-- `openai` for inference against OpenAI-compatible HTTP endpoints.
-- `transformers` for inference using the transformers library.
 
 As a short hand, the `all` extra installs all of the above.
 
@@ -73,20 +70,12 @@ Tip: ensure python is properly installed with uv:
 uv python install 3.12 --reinstall
 ```
 
-We provide custom groups to control optional extras.
-- `flash_attn`: Install `flash_attn` with correct handling of build isolation
-
-Thus, the following will setup the project with `flash_attn`
-```bash
-uv sync --all-extras --group flash_attn
-```
-
-To evaluate a single benchmark locally, you can use the following command:
+To evaluate a single benchmark locally, you can use the following command. The example below talks to the OpenAI API and needs `OPENAI_API_KEY` to be set. Any OpenAI-compatible server (for example vLLM) can be targeted by adding `base_url=http://host:port/v1` to `--llm-args`.
 
 ```bash
 eval_framework \
-    --models src/eval_framework/llm/models.py \
-    --llm-name Smollm135MInstruct \
+    --llm-name eval_framework.llm.openai.OpenAIModel \
+    --llm-args model_name="gpt-4o-mini" \
     --task-name "MMLU" \
     --task-subjects "abstract_algebra" \
     --output-dir ./eval_results \
@@ -155,7 +144,7 @@ For the full list of tasks and metrics, see [Detailed Task Table](https://aleph-
 
 Eval-Framework provides a unified interface for evaluating language models across diverse benchmarks. The framework follows this interaction model:
 
-1. **Define Your Model** - Specify which model to evaluate (HuggingFace, API, or custom)
+1. **Define Your Model** - Specify which model to evaluate (OpenAI-compatible endpoint, Aleph Alpha API, or custom)
 2. **Choose Your Task** - Select from 150+ available benchmarks or create custom ones
 3. **Configure Evaluation** - Set parameters like few-shot examples, sample count, and output format
 4. **Run Evaluation** - Execute locally via CLI/script or distribute via Determined AI
@@ -163,7 +152,7 @@ Eval-Framework provides a unified interface for evaluating language models acros
 
 ### Core Components
 
-- **Models**: Defined via [`BaseLLM`](https://aleph-alpha-research.github.io/eval-framework/evaluate_huggingface_model.html) interface (HuggingFace, OpenAI, custom APIs)
+- **Models**: Defined via the `BaseLLM` interface (OpenAI-compatible endpoints, Aleph Alpha API, custom APIs); see the [Model Arguments guide](https://aleph-alpha-research.github.io/eval-framework/model_arguments.html)
 - **Tasks**: Inherit from [`BaseTask`](https://aleph-alpha-research.github.io/eval-framework/add_new_benchmark_guide.html) (completion, loglikelihood, or LLM-judge based)
 - **Metrics**: Automatic scoring via [`BaseMetric`](https://aleph-alpha-research.github.io/eval-framework/benchmarks_and_metrics.html) classes
 - **Formatters**: Handle prompt construction and model-specific formatting
@@ -173,30 +162,27 @@ Eval-Framework provides a unified interface for evaluating language models acros
 
 1. **Install the framework** (see Quick Start above)
 ```
-pip install eval_framework[transformers]
+pip install eval_framework
 ```
 
-2. **Create and run your first evaluation using HuggingFace model**:
+2. **Create and run your first evaluation against an OpenAI-compatible endpoint** (requires `OPENAI_API_KEY`; pass `base_url=...` to the constructor to target a self-hosted server such as vLLM):
 
 ```python
-from functools import partial
 from pathlib import Path
 
-from eval_framework.llm.huggingface import HFLLM
+from eval_framework.llm.openai import OpenAIModel
 from eval_framework.main import main
 from eval_framework.tasks.eval_config import EvalConfig
-from template_formatting.formatter import HFFormatter
 
 
 # Define your model
-class MyHuggingFaceModel(HFLLM):
-    LLM_NAME = "microsoft/DialoGPT-medium"
-    DEFAULT_FORMATTER = partial(HFFormatter, "microsoft/DialoGPT-medium")
+class MyModel(OpenAIModel):
+    LLM_NAME = "gpt-4o-mini"
 
 
 if __name__ == "__main__":
     # Initialize your model
-    llm = MyHuggingFaceModel()
+    llm = MyModel()
 
     # Running evaluation on MMLU abstract algebra task using 5 few-shot examples and 10 samples
     config = EvalConfig(
@@ -205,7 +191,7 @@ if __name__ == "__main__":
         num_samples=10,
         task_name="MMLU",
         task_subjects=["abstract_algebra", "astronomy"],
-        llm_class=MyHuggingFaceModel,
+        llm_class=MyModel,
     )
 
     # Run evaluation and get results
@@ -217,7 +203,6 @@ if __name__ == "__main__":
 ### Next Steps
 
 - **Use CLI interface**: See [CLI usage guide](https://aleph-alpha-research.github.io/eval-framework/cli_usage.html) for command-line evaluation options
-- **Evaluate HuggingFace models**: Follow our [HuggingFace evaluation guide](https://aleph-alpha-research.github.io/eval-framework/evaluate_huggingface_model.html)
 - **Understand model arguments**: Read out [Model Arguments guide](https://aleph-alpha-research.github.io/eval-framework/model_arguments.html)
 - **Create custom benchmarks**: Follow our [benchmark creation guide](https://aleph-alpha-research.github.io/eval-framework/add_new_benchmark_guide.html)
 - **Scale your evaluations**: Use [Determined AI integration](https://aleph-alpha-research.github.io/eval-framework/using_determined.html) for distributed evaluation
@@ -229,7 +214,6 @@ if __name__ == "__main__":
 ### Getting Started
 
 - **[CLI Usage Guide](https://aleph-alpha-research.github.io/eval-framework/cli_usage.html)** - Detailed instructions for using the command-line interface
-- **[Evaluating HuggingFace Models](https://aleph-alpha-research.github.io/eval-framework/evaluate_huggingface_model.html)** - Complete guide for evaluating HuggingFace models
 - **[Understanding Results](https://aleph-alpha-research.github.io/eval-framework/understanding_results_guide.html)** - How to read and interpret evaluation results
 
 ### Advanced Usage

@@ -1,12 +1,9 @@
 from abc import ABC, abstractmethod
-from collections.abc import Generator, Sequence
-from contextlib import contextmanager
-from pathlib import Path
-from typing import Any
+from collections.abc import Sequence
 
 from eval_framework.shared.types import RawCompletion, RawLoglikelihood
 from eval_framework.tasks.base import Sample
-from template_formatting.formatter import BaseFormatter, Message
+from template_formatting.formatter import Message
 
 
 class BaseLLM(ABC):
@@ -121,71 +118,3 @@ class BaseLLM(ABC):
         Method for custom resource cleanup (particularly GPUs)
         """
         pass
-
-    @contextmanager
-    def _get_final_checkpoint(
-        self, checkpoint_path: str | Path | None = None, model_name: str | None = None, artifact_name: str | None = None
-    ) -> Generator[tuple[str | Path | None, str | None], None, None]:
-        if (num_provided := sum(x is not None for x in [checkpoint_path, model_name, artifact_name])) == 0:
-            if not getattr(self, "LLM_NAME", ""):
-                raise ValueError("Either LLM_NAME, checkpoint_path, model_name, or artifact_name must be provided.")
-            yield None, None  # no argument given, so will use the LLM_NAME of the class
-        elif num_provided > 1:
-            raise ValueError("At most one of `checkpoint_path`, `model_name`, or `artifact_name` must be provided.")
-
-        elif checkpoint_path is not None:
-            yield checkpoint_path, str(checkpoint_path)
-
-        elif model_name is not None:
-            yield model_name, model_name
-
-        else:
-            from eval_framework.utils.file_ops import WandbFs
-
-            assert artifact_name is not None
-            artifact_base, version = artifact_name.split(":", 1) if ":" in artifact_name else (artifact_name, "latest")
-            with WandbFs() as wandb_fs:
-                self.artifact = wandb_fs.get_artifact(artifact_base, version)  # self.artifact being read in main()
-                wandb_fs.download_artifact(self.artifact)
-                file_root = wandb_fs.find_hf_checkpoint_root_from_path_list()
-                if file_root is None:
-                    raise ValueError(f"Could not find HuggingFace checkpoint in artifact {artifact_base}:{version}")
-                yield file_root, artifact_name
-
-    def _get_final_formatter(
-        self,
-        formatter: BaseFormatter | None = None,
-        formatter_name: str | None = None,
-        formatter_kwargs: dict[str, Any] | None = None,
-    ) -> BaseFormatter | None:
-        if (num_provided := sum(x is not None for x in [formatter, formatter_name])) == 0:
-            return None  # none given, so will use the default of the class
-        elif num_provided > 1:
-            raise ValueError("At most one of `formatter` or `formatter_name` must be provided.")
-
-        if formatter:
-            if formatter_kwargs:
-                raise ValueError("Cannot provide `formatter_kwargs` when `formatter` is provided.")
-            return formatter
-        elif formatter_name:
-            kwargs = formatter_kwargs or {}
-            match formatter_name:
-                case "Llama3Formatter":
-                    from template_formatting.formatter import Llama3Formatter
-
-                    return Llama3Formatter()
-                case "MistralFormatter" | "MagistralFormatter":
-                    from eval_framework.llm.mistral import MagistralFormatter
-
-                    return MagistralFormatter(**kwargs)
-                case "ConcatFormatter":
-                    from template_formatting.formatter import ConcatFormatter
-
-                    return ConcatFormatter()
-                case "HFFormatter":
-                    from template_formatting.formatter import HFFormatter
-
-                    return HFFormatter(**kwargs)
-                case _:
-                    raise ValueError(f"Unsupported formatter: {formatter_name}.")
-        return None
