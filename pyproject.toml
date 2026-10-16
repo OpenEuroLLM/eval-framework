@@ -1,6 +1,6 @@
 [project]
 name = "eval-framework"
-version = "0.17.0"
+version = "0.18.0"
 description = "Evaluation Framework"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -55,11 +55,8 @@ determined = [
   "determined>=0.38.1,<0.39",
   "tensorboard==2.21.0"
 ]
-api = ["aleph-alpha-client>=11.5.1"]
-
-
 all = [
-  "eval_framework[determined,api]"
+  "eval_framework[determined]"
 ]
 
 [project.urls]
