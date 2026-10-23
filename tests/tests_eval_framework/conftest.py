@@ -1,4 +1,5 @@
-from collections.abc import Callable, Generator, Sequence
+import os
+from collections.abc import Generator, Sequence
 from typing import Any
 from unittest.mock import Mock
 
@@ -6,11 +7,14 @@ import pytest
 import wandb
 from openai.types.chat.completion_create_params import ResponseFormat
 
-from eval_framework.llm.base import BaseLLM, Sample
+from eval_framework.contract import Sample
+from eval_framework.llm.base import BaseLLM
 from eval_framework.shared.types import RawCompletion, RawLoglikelihood
 from eval_framework.tasks.utils import close_pools
 from template_formatting.formatter import Message
 from tests.tests_eval_framework.mock_wandb import MockArtifact, MockWandb, MockWandbApi, MockWandbRun
+
+os.environ.setdefault("WANDB_MODE", "disabled")
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int | pytest.ExitCode) -> None:
@@ -62,11 +66,6 @@ class MockLLM(BaseLLM):
             )
             for _ in messages
         ]
-
-
-@pytest.fixture
-def should_preempt_callable() -> Callable[[], bool]:
-    return lambda: False
 
 
 @pytest.fixture

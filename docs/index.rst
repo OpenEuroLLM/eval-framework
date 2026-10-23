@@ -1,7 +1,7 @@
 Eval-Framework Documentation
 ============================
 
-A **production-ready framework for evaluating large language models** across 90+ benchmarks, covering reasoning, coding, safety, and long-context tasks. The framework provides flexible model integration, custom benchmarks and metrics, perturbation testing, rich outputs, and statistical analysis. It supports local and distributed evaluations, including Determined AI integration.
+A **production-ready framework for evaluating large language models** across 90+ benchmarks, covering reasoning, coding, safety, and long-context tasks. The framework provides flexible model integration, custom benchmarks and metrics, perturbation testing, rich outputs, and statistical analysis. It supports local evaluation against any OpenAI-compatible endpoint.
 
 .. image:: eval-framework.png
    :alt: Eval-Framework
@@ -10,7 +10,6 @@ A **production-ready framework for evaluating large language models** across 90+
 Key Features
 ------------
 
-- **Scalability:** Distributed evaluation with Determined AI support.
 - **Extensibility:** Easily add custom models, benchmarks, and metrics.
 - **Comprehensive Benchmarks:** 90+ tasks covering reasoning, coding, math, knowledge, long-context, and safety.
 - **Flexible Model Integration:** OpenAI-compatible endpoints and BaseLLM-based models.
@@ -32,7 +31,7 @@ Install the library via uv (recommended):
    cd eval-framework
 
    # Install all dependencies
-   uv sync --all-extras
+   uv sync
 
 Now, you can run a single benchmark locally. The example talks to the OpenAI API and needs ``OPENAI_API_KEY`` to be set;
 any OpenAI-compatible server (for example vLLM) can be targeted by adding ``base_url=http://host:port/v1`` to ``--llm-args``:
@@ -40,7 +39,6 @@ any OpenAI-compatible server (for example vLLM) can be targeted by adding ``base
 .. code-block:: bash
 
    uv run eval_framework \
-        --llm-name eval_framework.llm.openai.OpenAIModel \
         --llm-args model_name="gpt-4o-mini" \
         --task-name "MMLU" \
         --task-subjects "abstract_algebra" \
@@ -71,7 +69,6 @@ Documentation Overview
    model_arguments.md
    overview_dataloading.md
    understanding_results_guide.md
-   using_determined.md
    utilities.md
    wandb_integration.md
 

@@ -4,59 +4,24 @@ import logging
 from pathlib import Path
 from typing import Any
 
-try:
-    from eval_framework.context.determined import DeterminedContext
-except ImportError:
-    DeterminedContext = None  # type: ignore
-
-
-from eval_framework.context.local import LocalContext
+from eval_framework.llm.openai import OpenAIModel
 from eval_framework.main import main
+from eval_framework.tasks.eval_config import EvalConfig
 from eval_framework.tasks.task_loader import load_extra_tasks
 from eval_framework.tasks.utils import close_pools
 from eval_framework.utils.logging import setup_logging
 
 logger = logging.getLogger(__name__)
 
-CONTEXT = {
-    "local": LocalContext,
-    "determined": DeterminedContext,
-}
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--context",
-        type=str,
-        required=False,
-        default="local",
-        choices=["local", "determined"],
-        help="The context in which the evaluation is run.",
-    )
-    parser.add_argument(
-        "--models",
-        type=Path,
-        required=False,
-        default=Path(__file__).parent / "llm" / "models.py",
-        help="The path to the Python module file containing model classes.",
-    )
     parser.add_argument(
         "--extra-tasks-dir",
         type=Path,
         default=None,
         required=False,
         help="Directory containing additional task plugin modules to load.",
-    )
-    parser.add_argument(
-        "--llm-name",
-        type=str,
-        required=False,
-        help=(
-            "Either a full import path for a model (e.g., `eval_framework.llm.openai.OpenAIModel`) or the "
-            "name of a class derived from `eval_framework.llm.base.BaseLLM` that can be found in the "
-            "models file. The resulting model is instantiated with the arguments provided via `--llm-args`."
-        ),
     )
     parser.add_argument(
         "--llm-args",
@@ -119,12 +84,6 @@ def parse_args() -> argparse.Namespace:
         required=False,
         default=None,
         help="A tag name, a branch name, or commit hash for the task HF dataset.",
-    )
-    parser.add_argument(
-        "--judge-models",
-        type=Path,
-        required=False,
-        help="The path to the Python module file containing LLM judge model classes.",
     )
     parser.add_argument(
         "--output-dir",
@@ -207,17 +166,6 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--judge-model-name",
-        type=str,
-        required=False,
-        help=(
-            "Either a full import path for a judge (e.g., `eval_framework.llm.openai.OpenAIModel`) or the "
-            "name of a class derived from `eval_framework.llm.base.BaseLLM` that can be found in the "
-            "models file. The resulting judge model is instantiated with the arguments provided via "
-            "`--judge-model-args`."
-        ),
-    )
-    parser.add_argument(
         "--judge-model-args",
         type=str,
         required=False,
@@ -281,6 +229,41 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def _build_config(kwargs: dict) -> EvalConfig:
+    llm_args, judge_model_args = kwargs["llm_args"], kwargs["judge_model_args"]
+    # `OpenAIModel` serves both the model and the judge and cannot be built without a `model_name`.
+    if "model_name" not in llm_args:
+        raise ValueError("llm_args must set model_name, e.g. `--llm-args model_name=gpt-4o-mini`.")
+    if judge_model_args and "model_name" not in judge_model_args:
+        raise ValueError("judge_model_args must set model_name, e.g. `--judge-model-args model_name=gpt-4o`.")
+
+    return EvalConfig(
+        llm_class=OpenAIModel,
+        llm_args=llm_args,
+        num_samples=kwargs["num_samples"],
+        max_tokens=kwargs["max_tokens"],
+        num_fewshot=kwargs["num_fewshot"],
+        task_name=kwargs["task_name"],
+        task_subjects=kwargs["task_subjects"],
+        hf_revision=kwargs["hf_revision"],
+        output_dir=kwargs["output_dir"],
+        hf_upload_dir=kwargs["hf_upload_dir"],
+        hf_upload_repo=kwargs["hf_upload_repo"],
+        wandb_entity=kwargs["wandb_entity"],
+        wandb_project=kwargs["wandb_project"],
+        wandb_run_id=kwargs["wandb_run_id"],
+        wandb_group=kwargs.get("wandb_group"),
+        wandb_upload_results=kwargs["wandb_upload_results"],
+        llm_judge_class=OpenAIModel if judge_model_args else None,
+        judge_model_args=judge_model_args,
+        batch_size=kwargs["batch_size"],
+        description=kwargs["description"],
+        randomize_judge_order=kwargs["randomize_judge_order"],
+        delete_output_dir_after_upload=kwargs["delete_output_dir_after_upload"],
+        repeats=kwargs["repeats"],
+    )
+
+
 def _run_single_task(kwargs: dict) -> None:
     # Setup logging for the output directory
     output_dir = kwargs.get("output_dir", "results")
@@ -295,49 +278,8 @@ def _run_single_task(kwargs: dict) -> None:
     if kwargs.get("extra_tasks_dir"):
         load_extra_tasks(kwargs["extra_tasks_dir"])
 
-    context_name = kwargs.pop("context")
-
-    context = CONTEXT[context_name](
-        llm_name=kwargs["llm_name"],
-        models_path=kwargs["models"],
-        num_samples=kwargs["num_samples"],
-        max_tokens=kwargs["max_tokens"],
-        num_fewshot=kwargs["num_fewshot"],
-        repeats=kwargs["repeats"],
-        task_name=kwargs["task_name"],
-        task_subjects=kwargs["task_subjects"],
-        hf_revision=kwargs["hf_revision"],
-        output_dir=kwargs["output_dir"],
-        wandb_project=kwargs["wandb_project"],
-        wandb_entity=kwargs["wandb_entity"],
-        wandb_run_id=kwargs["wandb_run_id"],
-        wandb_group=kwargs.get("wandb_group"),
-        wandb_upload_results=kwargs["wandb_upload_results"],
-        hf_upload_dir=kwargs["hf_upload_dir"],
-        hf_upload_repo=kwargs["hf_upload_repo"],
-        llm_args=kwargs["llm_args"],
-        judge_models_path=kwargs["judge_models"],
-        judge_model_name=kwargs["judge_model_name"],
-        judge_model_args=kwargs["judge_model_args"],
-        batch_size=kwargs["batch_size"],
-        description=kwargs["description"],
-        randomize_judge_order=kwargs["randomize_judge_order"],
-        delete_output_dir_after_upload=kwargs["delete_output_dir_after_upload"],
-        # save_logs=kwargs["save_logs"],
-    )
-
-    with context as ctx:
-        if ctx.config is None:
-            raise ValueError(f"Context configuration is not set for '{type(ctx)}'.")
-
-        main(
-            llm=ctx.config.llm_class(**ctx.config.llm_args),
-            config=ctx.config,
-            should_preempt_callable=ctx.should_preempt,
-            trial_id=ctx.get_trial_id(),
-            resource_cleanup=kwargs.pop("resource_cleanup", False),
-            verbosity=log_level,
-        )
+    config = _build_config(kwargs)
+    main(llm=config.llm_class(**config.llm_args), config=config, verbosity=log_level)
 
     logger.info(f"time since start: {datetime.datetime.now() - now}")
 

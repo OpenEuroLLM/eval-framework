@@ -21,7 +21,7 @@ and first-party/internal packages are excluded.
 | `mysql-connector-python` | `>=26.7.0,<27` |
 | `nltk` | `>=3.10.3,<4` |
 | `numpy` | `>=2.5.4` |
-| `openai` | `>=3.33.0,<4` |
+| `openai` | `>=3.35.1,<4` |
 | `psycopg2-binary` | `>=2.9.13,<3` |
 | `pycountry` | `>=26.2.16,<27` |
 | `pydantic` | `>=2.14.1,<3` |
@@ -31,7 +31,7 @@ and first-party/internal packages are excluded.
 | `scipy` | `>=1.18.1,<2` |
 | `sympy` | `>=1.14.0,<2` |
 | `tiktoken` | `>=0.14.0,<1` |
-| `transformers` | `>=5.20.1,<6` |
+| `transformers` | `>=5.20.2,<6` |
 | `wandb` | `>=0.31.0,<1` |
 | `xmltodict` | `>=1.0.4,<1.1` |
 
@@ -43,7 +43,7 @@ and first-party/internal packages are excluded.
 | `annotated-types` | `0.8.0` |
 | `anyio` | `4.15.1` |
 | `attrs` | `26.1.0` |
-| `certifi` | `2026.10.18` |
+| `certifi` | `2026.10.19` |
 | `charset-normalizer` | `3.5.2` |
 | `click` | `8.5.0` |
 | `cloudpickle` | `3.1.2` |
@@ -54,13 +54,13 @@ and first-party/internal packages are excluded.
 | `distro` | `1.9.0` |
 | `filelock` | `4.2.4` |
 | `fsspec` | `2026.7.0` |
-| `googleapis-common-protos` | `1.75.5` |
+| `googleapis-common-protos` | `1.76.0` |
 | `h11` | `0.16.0` |
 | `hf-xet` | `1.7.0` |
 | `httpcore` | `1.0.9` |
-| `httpcore2` | `2.15.1` |
+| `httpcore2` | `2.16.0` |
 | `httpx` | `0.28.1` |
-| `httpx2` | `2.15.1` |
+| `httpx2` | `2.16.0` |
 | `httpx2-jsfetch` | `1.0` |
 | `huggingface-hub` | `2.2.0` |
 | `idna` | `3.20` |
@@ -80,13 +80,13 @@ and first-party/internal packages are excluded.
 | `opentelemetry-sdk` | `1.45.1` |
 | `opentelemetry-semantic-conventions` | `0.66b1` |
 | `packaging` | `26.3` |
-| `pandas` | `3.0.6` |
+| `pandas` | `3.1.0` |
 | `platformdirs` | `4.13.5` |
 | `protobuf` | `7.36.2` |
 | `pyarrow` | `26.0.0` |
 | `pydantic-core` | `2.50.1` |
 | `pygments` | `2.21.0` |
-| `python-dateutil` | `2.9.0.post0` |
+| `python-dateutil` | `3.0.0` |
 | `referencing` | `0.37.0` |
 | `regex` | `2026.9.29` |
 | `requests` | `2.34.2` |

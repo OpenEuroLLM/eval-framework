@@ -19,13 +19,12 @@
 
 ## Why Choose This Framework?
 
-- **Scalability**: Built for distributed evaluation. Currently providing an integration with Determined AI.
 - **Extensibility**: Easily add custom models, benchmarks, and metrics with object-oriented base classes.
 - **Comprehensive**: Comes pre-loaded with over 90 tasks covering a broad and diverse range, from reasoning and coding to safety and long-context. Also comes with a comprehensive set of metrics, including LLM-as-a-judge evaluations.
 
 ## Other features
 
-- Flexible Model Integration: Supports OpenAI-compatible endpoints or custom implementations using the BaseLLM class.
+- Flexible Model Integration: The CLI evaluates any OpenAI-compatible endpoint via `OpenAIModel`; custom `BaseLLM` implementations can be used through the Python API (`EvalConfig(llm_class=...)`).
 - Custom Benchmarks: Easily add new benchmarks with minimal code using the BaseTask class.
 - Custom Metrics: Easily define new metrics using the BaseMetric class.
 - Perturbation Testing: Robustness analysis with configurable perturbation types and probabilities.
@@ -44,24 +43,19 @@ The easiest way to get started is by installing the library via `pip` and use it
 pip install eval_framework
 ```
 
-There are optional extras available to unlock specific features of the library:
-- `determined` for running jobs via determined.
-
-As a short hand, the `all` extra installs all of the above.
-
 We use `uv` to better resolve dependencies when downloading the extras. You can install uv with:
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 or by follwing the `uv` [installation docs.](https://docs.astral.sh/uv/getting-started/installation/)
 
-Now, you can safely install the project with all optional extras:
+Now, you can safely install the project:
 ```bash
-uv sync --all-extras
+uv sync
 ```
 or with pip
 ```bash
-uv pip install eval_framework[all]
+uv pip install eval_framework
 ```
 
 Tip: ensure python is properly installed with uv:
@@ -71,9 +65,10 @@ uv python install 3.12 --reinstall
 
 To evaluate a single benchmark locally, you can use the following command. The example below talks to the OpenAI API and needs `OPENAI_API_KEY` to be set. Any OpenAI-compatible server (for example vLLM) can be targeted by adding `base_url=http://host:port/v1` to `--llm-args`.
 
+The evaluated model and the LLM judge are always instantiated as `OpenAIModel`. Configure them with `--llm-args` and `--judge-model-args` (e.g. `model_name=...`, `base_url=...`); `model_name` is required in both, and passing `--judge-model-args` enables the judge.
+
 ```bash
 eval_framework \
-    --llm-name eval_framework.llm.openai.OpenAIModel \
     --llm-args model_name="gpt-4o-mini" \
     --task-name "MMLU" \
     --task-subjects "abstract_algebra" \
@@ -146,7 +141,7 @@ Eval-Framework provides a unified interface for evaluating language models acros
 1. **Define Your Model** - Specify which model to evaluate (OpenAI-compatible endpoint or custom)
 2. **Choose Your Task** - Select from 150+ available benchmarks or create custom ones
 3. **Configure Evaluation** - Set parameters like few-shot examples, sample count, and output format
-4. **Run Evaluation** - Execute locally via CLI/script or distribute via Determined AI
+4. **Run Evaluation** - Execute locally via CLI/script
 5. **Analyze Results** - Review detailed JSON outputs, metrics, and generated reports
 
 ### Core Components
@@ -204,7 +199,6 @@ if __name__ == "__main__":
 - **Use CLI interface**: See [CLI usage guide](https://aleph-alpha-research.github.io/eval-framework/cli_usage.html) for command-line evaluation options
 - **Understand model arguments**: Read out [Model Arguments guide](https://aleph-alpha-research.github.io/eval-framework/model_arguments.html)
 - **Create custom benchmarks**: Follow our [benchmark creation guide](https://aleph-alpha-research.github.io/eval-framework/add_new_benchmark_guide.html)
-- **Scale your evaluations**: Use [Determined AI integration](https://aleph-alpha-research.github.io/eval-framework/using_determined.html) for distributed evaluation
 - **Understand your results**: Read our [results interpretation guide](https://aleph-alpha-research.github.io/eval-framework/understanding_results_guide.html)
 - **Log results in WandB**: See how [we integrate WandB](https://aleph-alpha-research.github.io/eval-framework/wandb_integration.html) for metric and lineage tracking
 
@@ -224,7 +218,6 @@ if __name__ == "__main__":
 
 ### Scaling & Production
 
-- **[Using Determined](https://aleph-alpha-research.github.io/eval-framework/using_determined.html)** - Guide for distributed evaluation using Determined AI
 - **[Controlling Upload Results](https://aleph-alpha-research.github.io/eval-framework/controlling_upload_results.html)** - How to manage and control the upload of evaluation results
 
 ### Contributing

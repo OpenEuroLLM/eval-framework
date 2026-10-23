@@ -1,6 +1,6 @@
 [project]
 name = "eval-framework"
-version = "0.18.3"
+version = "0.19.0"
 description = "Evaluation Framework"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -44,19 +44,9 @@ dependencies = [
   # https://github.com/sympy/sympy/blob/0204fa34e8f6f6f8ccb4de01209be9a2345c9d6e/doc/src/contributing/dependencies.md?plain=1#L125
   "antlr4-python3-runtime==4.11.0",
   "scipy>=1.18.1,<2",  # required for the aggregation of pass@k metrics
-  "openai>=3.33.0,<4",
+  "openai>=3.35.1,<4",
   "tiktoken>=0.14.0,<1",
   "transformers[chat-template]>=5.20.1,<6",
-]
-
-[project.optional-dependencies]
-# Model-specific extras
-determined = [
-  "determined>=0.38.1,<0.39",
-  "tensorboard==2.21.0"
-]
-all = [
-  "eval_framework[determined]"
 ]
 
 [project.urls]
@@ -69,7 +59,7 @@ eval_framework = "eval_framework.run:run"
 dev = [
   "mypy>=2.4.0,<3",
   "pytest>=9.1.1,<10",
-  "pytest-mock>=3.16.0",
+  "pytest-mock>=3.17.0",
   "pytest-xdist>=3.8.0,<4",
   "pytest-sugar>1.1,<2",
   "types-pyyaml>=6.0.12.20260906,<7",
@@ -81,16 +71,11 @@ dev = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.13.1,<0.13.2"]
+requires = ["uv_build>=0.13.3,<0.13.4"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-name = ["eval_framework", "template_formatting"]
-
-[tool.uv]
-override-dependencies = [
-  "requests>=2.32,<3",  # fix for determined
-]
 
 [tool.ruff]
 line-length = 120
@@ -117,6 +102,7 @@ known-third-party = ["wandb"]
 plugins = "pydantic.mypy"
 disallow_untyped_defs = true
 ignore_missing_imports = true
+no_implicit_reexport = true
 files = ["src", "utils"]
 
 [tool.pytest.ini_options]
@@ -131,7 +117,4 @@ markers = [
 ]
 filterwarnings = [
     "ignore::DeprecationWarning:datasets.utils._dill:",
-]
-env = [
-    "WANDB_MODE = disabled",
 ]
