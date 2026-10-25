@@ -19,9 +19,9 @@ and first-party/internal packages are excluded.
 | `llm-sandbox` | `==0.3.46` |
 | `lxml` | `>=6.1.3,<7` |
 | `mysql-connector-python` | `>=26.7.0,<27` |
-| `nltk` | `>=3.10.3,<4` |
+| `nltk` | `>=3.10.4,<4` |
 | `numpy` | `>=2.5.4` |
-| `openai` | `>=3.35.1,<4` |
+| `openai` | `>=3.36.0,<4` |
 | `psycopg2-binary` | `>=2.9.13,<3` |
 | `pycountry` | `>=26.2.16,<27` |
 | `pydantic` | `>=2.14.1,<3` |
@@ -31,7 +31,7 @@ and first-party/internal packages are excluded.
 | `scipy` | `>=1.18.1,<2` |
 | `sympy` | `>=1.14.0,<2` |
 | `tiktoken` | `>=0.14.0,<1` |
-| `transformers` | `>=5.20.2,<6` |
+| `transformers` | `>=5.20.1,<6` |
 | `wandb` | `>=0.31.0,<1` |
 | `xmltodict` | `>=1.0.4,<1.1` |
 
@@ -43,7 +43,7 @@ and first-party/internal packages are excluded.
 | `annotated-types` | `0.8.0` |
 | `anyio` | `4.15.1` |
 | `attrs` | `26.1.0` |
-| `certifi` | `2026.10.19` |
+| `certifi` | `2026.10.23` |
 | `charset-normalizer` | `3.5.2` |
 | `click` | `8.5.0` |
 | `cloudpickle` | `3.1.2` |
@@ -62,9 +62,9 @@ and first-party/internal packages are excluded.
 | `httpx` | `0.28.1` |
 | `httpx2` | `2.16.0` |
 | `httpx2-jsfetch` | `1.0` |
-| `huggingface-hub` | `2.2.0` |
+| `huggingface-hub` | `2.3.0` |
 | `idna` | `3.20` |
-| `jiter` | `0.17.0` |
+| `jiter` | `0.18.0` |
 | `joblib` | `1.6.0` |
 | `jsonschema-specifications` | `2025.9.1` |
 | `markdown-it-py` | `4.2.0` |
