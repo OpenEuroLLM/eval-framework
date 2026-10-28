@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 import tiktoken
-from openai import OpenAI, omit
+from openai import APIConnectionError, ConflictError, InternalServerError, OpenAI, RateLimitError, omit
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionMessageParam,
@@ -26,6 +26,16 @@ from eval_framework.shared.types import (
 from template_formatting.formatter import BaseFormatter, Message, Role
 
 logger = logging.getLogger(__name__)
+
+
+class EmptyCompletionError(ValueError):
+    pass
+
+
+def _require_choices(response: Any) -> None:
+    # OpenRouter reports a provider error as HTTP 200 with an `error` body and no choices.
+    if not response.choices:
+        raise EmptyCompletionError(f"Response has no choices: {response.model_extra}")
 
 
 def _to_chat_completion_message(message: Message) -> ChatCompletionMessageParam:
@@ -60,6 +70,25 @@ def _choice_loglikelihood(prompt_logprobs: Sequence[Any], choice: str) -> tuple[
         total += token["logprob"]
         num_tokens += 1
     return total, num_tokens
+
+
+# The failures one call can have without the model being misconfigured. The OpenAI SDK's own
+# ``max_retries`` covers HTTP status codes only: OpenRouter answers provider errors and rate limits
+# with a 200 body whose ``choices`` is missing, ``null`` or empty, or carries no message
+# (``TypeError``, ``IndexError``, ``AttributeError`` out of the client), and a truncated body raises
+# ``JSONDecodeError`` (a ``ValueError``, as is pydantic's ``ValidationError`` when a provider reports
+# a token count in a type ``RawCompletion`` rejects). Other 4xx responses (bad key, unknown model,
+# rejected request) would fail every row the same way and are not retried.
+TRANSIENT_ERRORS: tuple[type[Exception], ...] = (
+    TypeError,
+    IndexError,
+    AttributeError,
+    ValueError,
+    APIConnectionError,  # includes APITimeoutError
+    RateLimitError,
+    InternalServerError,
+    ConflictError,
+)
 
 
 class OpenAIModel(BaseLLM):
@@ -121,6 +150,9 @@ class OpenAIModel(BaseLLM):
         self.bytes_per_token_scalar = (
             4.0 / bytes_per_token if bytes_per_token is not None else 4.0 / self.BYTES_PER_TOKEN
         )
+
+    def is_retryable(self, exc: Exception) -> bool:
+        return isinstance(exc, TRANSIENT_ERRORS)
 
     def _get_encoder_or_none(self) -> tiktoken.Encoding | None:
         assert self._model_name is not None
@@ -205,6 +237,7 @@ class OpenAIModel(BaseLLM):
                     max_tokens=scaled_max_tokens,
                     stop=stop_sequences,
                 )
+                _require_choices(response)
                 completion = response.choices[0].text
                 usage = getattr(response, "usage", None)
                 prompt_tokens = getattr(usage, "prompt_tokens", None) if usage is not None else None
@@ -252,6 +285,7 @@ class OpenAIModel(BaseLLM):
                 completion_tokens = getattr(chat_response.usage, "completion_tokens", None)
                 completion_details = getattr(chat_response.usage, "completion_tokens_details", None)
                 reasoning_tokens = getattr(completion_details, "reasoning_tokens", None)
+                _require_choices(chat_response)
                 choice = chat_response.choices[0]
                 completion = choice.message.content or ""
                 # vLLM's reasoning parser returns the think block as `reasoning`; older
