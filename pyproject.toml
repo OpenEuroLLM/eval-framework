@@ -1,6 +1,6 @@
 [project]
 name = "eval-framework"
-version = "0.19.5"
+version = "0.19.6"
 description = "Evaluation Framework"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -44,9 +44,9 @@ dependencies = [
   # https://github.com/sympy/sympy/blob/0204fa34e8f6f6f8ccb4de01209be9a2345c9d6e/doc/src/contributing/dependencies.md?plain=1#L125
   "antlr4-python3-runtime==4.11.0",
   "scipy>=1.18.1,<2",  # required for the aggregation of pass@k metrics
-  "openai>=3.37.0,<4",
+  "openai>=3.39.0,<4",
   "tiktoken>=0.14.0,<1",
-  "transformers[chat-template]>=5.20.2,<6",
+  "transformers[chat-template]>=5.21.0,<6",
 ]
 
 [project.urls]
@@ -66,12 +66,12 @@ dev = [
   "types-python-dateutil>=2.9.0.20261021,<3",
   "types-requests>=2.33.0.20261006,<3",
   "plotly>=7.1.0,<8",
-  "ruff>=0.17.2",
+  "ruff>=0.17.3",
   "pip-licenses>=5.5.5",
 ]
 
 [build-system]
-requires = ["uv_build>=0.13.5,<0.13.6"]
+requires = ["uv_build>=0.13.6,<0.13.7"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
