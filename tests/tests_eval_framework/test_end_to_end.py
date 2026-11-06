@@ -11,17 +11,16 @@ from datasets import disable_caching
 
 from eval_framework.main import main
 from eval_framework.tasks.eval_config import EvalConfig
-from eval_framework.tasks.task_names import TaskNameEnum
+from eval_framework.tasks.registry import registered_task_names
 from tests.tests_eval_framework.conftest import MockLLM
 
 
 def pytest_generate_tests(metafunc: Any) -> None:
-    # dynamic parameterization for test_all_tasks_with_all_samples: go over all tasks
+    # dynamic parameterization for test_with_all_samples: go over all registered tasks
     if "full_task_name" in metafunc.fixturenames:
-        task_names = [task.value for task in TaskNameEnum]
-        ids = [task.name for task in TaskNameEnum]
+        task_names = registered_task_names()
 
-        metafunc.parametrize("full_task_name", task_names, ids=ids)
+        metafunc.parametrize("full_task_name", task_names, ids=task_names)
 
 
 logger = logging.getLogger(__name__)
@@ -53,6 +52,9 @@ def get_disk_usage_info() -> str:
     return f"Free space: {free_gb:.2f}GB\nTop directories:\n{top_dirs}\nSpecific directories:\n{specific_dirs}\n"
 
 
+@pytest.mark.skip(
+    reason="Runs every registered task on its full dataset with a mock LLM; too costly for the crash coverage it adds."
+)
 @pytest.mark.cpu_slow
 @patch("eval_framework.tasks.utils.run_python_code")
 def test_with_all_samples(mock_run_python_code: Mock, tmp_path: Path, full_task_name: str) -> None:

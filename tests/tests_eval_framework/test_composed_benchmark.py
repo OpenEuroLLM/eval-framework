@@ -4,10 +4,10 @@ from typing import Any, override
 import pytest
 from datasets import Dataset, DatasetDict
 
-from eval_framework.answer import PickFromCandidates
+from eval_framework.answer import ExtractFromCompletion, PickFromCandidates
 from eval_framework.choices import ChoiceFields, ChoiceReader
 from eval_framework.composed import ComposedBenchmark, ComposedEval, LanguageSpec
-from eval_framework.contract import ResponseType
+from eval_framework.contract import ResponseType, Sample
 from eval_framework.eval_kind import Choice, Generative, SampleBody, assemble_messages
 from eval_framework.fewshot import (
     ChoiceRenderer,
@@ -28,6 +28,7 @@ from eval_framework.tasks.dataset_loading import DatasetLoader, DatasetPolicy
 from eval_framework.tasks.task_style import TaskStyle, TaskStyler
 from template_formatting.formatter import ConcatFormatter, Message, Role
 from tests.tests_eval_framework.benchmarks.utils import DatasetStub, first_sample
+from tests.tests_eval_framework.conftest import MockLLM
 
 
 class _DummyReader(ChoiceReader):
@@ -369,7 +370,7 @@ def test_num_samples_caps_per_subject_not_in_total() -> None:
     # When capping at two samples
     samples = list(task.iterate_samples(num_samples=2))
 
-    # Then num_samples caps per subject (like BaseTask): two from each; ids restart at 0 per subject
+    # Then num_samples caps per subject: two from each; ids restart at 0 per subject
     assert [sample.subject for sample in samples] == ["a", "a", "b", "b"]
     assert [sample.id for sample in samples] == [0, 1, 0, 1]
 
@@ -434,6 +435,12 @@ def test_get_metadata_reports_fewshot_split_from_the_policy() -> None:
     sampled = FewShot(FewShotSplit("dev"), ChoiceRenderer(_DUMMY_READER, _DummyStyler()))
     assert _make_eval(fewshot=sampled).get_metadata()["fewshot_split"] == "dev"
     assert "fewshot_split" not in _make_eval(fewshot=NoFewShot()).get_metadata()
+
+
+def test_get_metadata_reports_the_kinds_extra_metadata() -> None:
+    # The kind's own metadata is merged in — for a Choice eval that is the styler's task style,
+    # so results record which prompt style produced them.
+    assert _make_eval().get_metadata()["task_style"] == TaskStyle.MULTIPLE_CHOICE.value
 
 
 def test_choice_wires_the_kind_and_fewshot_from_one_reader_and_styler() -> None:
@@ -544,3 +551,38 @@ def test_generative_lets_the_item_decide_whether_there_is_a_system_turn() -> Non
     assert kind.messages(without_instructions, fewshot=[], subject_label="s") == [
         Message(role=Role.USER, content="q"),
     ]
+
+
+def test_model_cleanup_runs_before_answer_extraction() -> None:
+    # Given an LLM whose cleanup marks what it touched and an answer policy whose extraction does the same.
+    # Extraction must run on cleaned text (e.g. after the model's reasoning trace is stripped), never on the
+    # raw completion.
+    class _MarkerLLM(MockLLM):
+        @override
+        def post_process_completion(self, completion: str, sample: Sample) -> str:
+            return f"MODEL[{completion}]"
+
+    task = ComposedEval(
+        display_name="marker-eval",
+        kind=Generative(build_prompt=lambda item: item["question"], cue="", ground_truth=lambda item: None, metrics=[]),
+        answer=ExtractFromCompletion(lambda completion_text: f"EXTRACT[{completion_text}]"),
+        loader=_DUMMY_LOADER,
+        sample_split=_DUMMY_SPLIT,
+        fewshot=NoFewShot().bind(0),
+        subjects=_DUMMY_EVAL_SUBJECTS,
+        language=None,
+        rnd=_DUMMY_RNG,
+    )
+    sample = Sample(
+        id=0,
+        subject="stub",
+        ground_truth=None,
+        messages=[Message(role=Role.USER, content="a question")],
+        possible_completions=None,
+    )
+
+    # When generating the completion
+    [completion] = task.generate_completions(_MarkerLLM(), [sample])
+
+    # Then the extraction wraps the model's cleanup, which wraps the raw generation
+    assert completion.completion == f"EXTRACT[MODEL[{completion.raw_completion}]]"
