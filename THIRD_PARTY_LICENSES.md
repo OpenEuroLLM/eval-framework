@@ -55,7 +55,7 @@ runtime Python dependencies; dev-only and internal packages are excluded.
 - **opentelemetry-sdk** 1.45.2 - https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-sdk
 - **opentelemetry-semantic-conventions** 0.66b2 - https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-semantic-conventions
 - **pyarrow** 26.0.1 - https://arrow.apache.org/
-- **python-iso639** 2026.7.23 - https://github.com/jacksonllee/iso639
+- **python-iso639** 2026.11.7 - https://github.com/jacksonllee/iso639
 - **requests** 2.34.2 - https://github.com/psf/requests
 - **safetensors** 0.8.0 - https://github.com/huggingface/safetensors
 - **tokenizers** 0.23.3 - https://github.com/huggingface/tokenizers
@@ -63,7 +63,7 @@ runtime Python dependencies; dev-only and internal packages are excluded.
 
 ## Apache-2.0 AND CNRI-Python
 
-- **regex** 2026.11.7 - https://github.com/mrabarnett/mrab-regex
+- **regex** 2026.11.8 - https://github.com/mrabarnett/mrab-regex
 
 ## Apache-2.0 OR BSD-2-Clause
 
@@ -16915,7 +16915,7 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### python-iso639 2026.7.23 (Apache-2.0)
+### python-iso639 2026.11.7 (Apache-2.0)
 
 ```text
 Apache License
@@ -17159,7 +17159,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### regex 2026.11.7 (Apache-2.0 AND CNRI-Python)
+### regex 2026.11.8 (Apache-2.0 AND CNRI-Python)
 
 ```text
 This work was derived from the 're' module of CPython 2.6 and CPython 3.1,
