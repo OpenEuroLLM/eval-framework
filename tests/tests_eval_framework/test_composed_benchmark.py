@@ -7,7 +7,7 @@ from datasets import Dataset, DatasetDict
 from eval_framework.answer import ExtractFromCompletion, PickFromCandidates
 from eval_framework.choices import ChoiceFields, ChoiceReader
 from eval_framework.composed import ComposedBenchmark, ComposedEval
-from eval_framework.contract import ResponseType, Sample
+from eval_framework.contract import ResponseType, ResultCandidate
 from eval_framework.eval_kind import Choice, Generative, SampleBody, assemble_messages
 from eval_framework.fewshot import (
     ChoiceRenderer,
@@ -18,11 +18,12 @@ from eval_framework.fewshot import (
     NoFewShot,
     SampleSplit,
 )
-from eval_framework.metrics.base import BaseMetric
+from eval_framework.metrics.base import BaseMetric, MetricResult
 from eval_framework.metrics.efficiency.bytes_per_sequence_position import (
     BytesLoglikelihood,
     SequencePositionsLoglikelihood,
 )
+from eval_framework.shared.types import BaseMetricContext
 from eval_framework.subjects import ListOfSubjects, Subject, Subjects, SubjectsSelector
 from eval_framework.tasks.dataset_loading import DatasetLoader, DatasetPolicy
 from eval_framework.tasks.task_style import TaskStyle, TaskStyler
@@ -100,6 +101,10 @@ class _DummyStyler(TaskStyler):
 
 class _FakeMetric(BaseMetric[Any]):
     NAME = "FakeMetric"
+
+    @override
+    def calculate(self, response: Any) -> list[MetricResult]:
+        return []
 
 
 class _StubTaskStyler(TaskStyler):
@@ -554,7 +559,7 @@ def test_model_cleanup_runs_before_answer_extraction() -> None:
     # raw completion.
     class _MarkerLLM(MockLLM):
         @override
-        def post_process_completion(self, completion: str, sample: Sample) -> str:
+        def post_process_completion(self, completion: str, sample: ResultCandidate) -> str:
             return f"MODEL[{completion}]"
 
     task = ComposedEval(
@@ -567,8 +572,9 @@ def test_model_cleanup_runs_before_answer_extraction() -> None:
         subjects=_DUMMY_EVAL_SUBJECTS,
         rnd=_DUMMY_RNG,
     )
-    sample = Sample(
-        id=0,
+    sample = ResultCandidate(
+        sample_id=0,
+        result_id=0,
         subject="stub",
         ground_truth=None,
         messages=[Message(role=Role.USER, content="a question")],
@@ -580,3 +586,34 @@ def test_model_cleanup_runs_before_answer_extraction() -> None:
 
     # Then the extraction wraps the model's cleanup, which wraps the raw generation
     assert completion.completion == f"EXTRACT[MODEL[{completion.raw_completion}]]"
+
+
+def test_choice_derives_the_samples_context_from_the_item() -> None:
+    # Like Generative, a choice benchmark may derive per-item metric context; it lands on the sample unchanged.
+    class _ItemContext(BaseMetricContext):
+        item_id: str
+
+    benchmark = ComposedBenchmark.choice(
+        id="c",
+        reader=_DUMMY_READER,
+        styler=_DummyStyler(),
+        sample_split="test",
+        fewshot_split="test",
+        dataset_policy=DatasetStub({"test": [{"q": "eval", "id": "q-1"}]}),
+        context=lambda item: _ItemContext(item_id=item["id"]),
+    )
+
+    assert first_sample(benchmark, num_fewshot=0).context == _ItemContext(item_id="q-1")
+
+
+def test_choice_sample_has_no_context_by_default() -> None:
+    benchmark = ComposedBenchmark.choice(
+        id="c",
+        reader=_DUMMY_READER,
+        styler=_DummyStyler(),
+        sample_split="test",
+        fewshot_split="test",
+        dataset_policy=DatasetStub({"test": [{"q": "eval"}]}),
+    )
+
+    assert first_sample(benchmark, num_fewshot=0).context is None

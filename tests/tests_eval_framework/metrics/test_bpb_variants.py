@@ -1,6 +1,9 @@
 import math
 
+import pytest
+
 import eval_framework.metrics.loglikelihood.bpb_variants_common as bpb_common
+from eval_framework.metrics.base import MetricResult
 from eval_framework.metrics.loglikelihood.bpb_variants import BitsPerByteVariantsLoglikelihood
 from eval_framework.shared.types import Loglikelihood, PerTokenScores
 
@@ -19,7 +22,8 @@ def _response(
     if bits is not None and byte_lens is not None:
         per_tok = {ground_truth: PerTokenScores(bits=bits, byte_lens=byte_lens)}
     return Loglikelihood(
-        id=1,
+        sample_id=1,
+        result_id=1,
         subject="s",
         ground_truth=ground_truth,
         prompt="p",
@@ -30,15 +34,16 @@ def _response(
     )
 
 
-def _by_name(results):
+def _by_name(results: list[MetricResult]) -> dict[str, MetricResult]:
     return {r.metric_name: r for r in results}
 
 
-def test_headline_matches_legacy_formula():
+def test_headline_matches_legacy_formula() -> None:
     ground_truth = " Paris"
     log_p = -2.5
     resp = Loglikelihood(
-        id=1,
+        sample_id=1,
+        result_id=1,
         subject="s",
         ground_truth=ground_truth,
         prompt="p",
@@ -54,7 +59,7 @@ def test_headline_matches_legacy_formula():
     assert by["BitsPerByte_bytes"].value == float(num_bytes)
 
 
-def test_emits_prefix_when_per_token_present(monkeypatch):
+def test_emits_prefix_when_per_token_present(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(bpb_common, "K_ENTRY", 1)
     monkeypatch.setattr(bpb_common, "K_RATE", 4)
     resp = _response("abcdef", [1.0] * 6, [1] * 6)
@@ -63,9 +68,10 @@ def test_emits_prefix_when_per_token_present(monkeypatch):
     assert "PrefixBPB_rate" in names
 
 
-def test_omits_prefix_without_per_token():
+def test_omits_prefix_without_per_token() -> None:
     resp = Loglikelihood(
-        id=1,
+        sample_id=1,
+        result_id=1,
         subject="s",
         ground_truth="A",
         prompt="p",
@@ -83,10 +89,11 @@ def test_omits_prefix_without_per_token():
     }
 
 
-def test_first_alias_default(monkeypatch):
+def test_first_alias_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(bpb_common, "ALIAS_RULE", "first")
     resp = Loglikelihood(
-        id=1,
+        sample_id=1,
+        result_id=1,
         subject="s",
         ground_truth=["first", "second"],
         prompt="p",

@@ -28,6 +28,22 @@ class Sample(BaseModel):
     context: BaseMetricContext | list[BaseMetricContext] | None = None
 
 
+class ResultCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
+
+    sample_id: int
+    """This ID denotes the input problem identifier. Aggregators can work with this to find unique problems."""
+
+    result_id: int
+    """This ID relates to the output result identifier. This subsumes repeats."""
+
+    subject: str
+    messages: list[Message]
+    ground_truth: str | list[str] | None
+    possible_completions: list[str] | None
+    context: BaseMetricContext | list[BaseMetricContext] | None = None
+
+
 class Eval(ABC):
     """The contract a caller relies on to run an evaluation"""
 
@@ -41,7 +57,7 @@ class Eval(ABC):
     def generate_completions(
         self,
         llm: "BaseLLM",
-        samples: list[Sample],
+        samples: list[ResultCandidate],
         stop_sequences: list[str] | None = None,
         max_tokens: int | None = None,
     ) -> list[Completion]:

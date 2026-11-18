@@ -11,7 +11,8 @@ def _sidecar_result(
     subject: str = "subj",
 ) -> Result:
     return Result(
-        id=id_,
+        sample_id=id_,
+        result_id=id_,
         subject=subject,
         num_fewshot=0,
         llm_name="test",
@@ -25,7 +26,7 @@ def _sidecar_result(
     )
 
 
-def test_corpus_aggregation_from_sidecars():
+def test_corpus_aggregation_from_sidecars() -> None:
     results = [
         _sidecar_result(id_=1, metric_name="BitsPerByte_bits", value=10.0),
         _sidecar_result(id_=1, metric_name="BitsPerByte_bytes", value=5.0),
@@ -37,7 +38,7 @@ def test_corpus_aggregation_from_sidecars():
     assert "Corpus BPB (mean-of-ratios)" not in aggregated
 
 
-def test_corpus_aggregation_skips_errored_sidecars():
+def test_corpus_aggregation_skips_errored_sidecars() -> None:
     bad = _sidecar_result(id_=3, metric_name="BitsPerByte_bits", value=99.0)
     bad.error = Error(error_class="ValueError", message="bad", traceback="")
     results = [

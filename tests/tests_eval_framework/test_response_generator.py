@@ -1,4 +1,4 @@
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
@@ -6,15 +6,19 @@ from unittest.mock import Mock
 import pytest
 from dateutil import parser
 
-from eval_framework.contract import Benchmark, Eval, ResponseType, Sample
+from eval_framework.choices import ChoiceFields, ChoiceReader
+from eval_framework.composed import ComposedBenchmark
+from eval_framework.contract import Benchmark, Eval, ResponseType, ResultCandidate, Sample
 from eval_framework.llm.base import BaseLLM
 from eval_framework.response_generator import ResponseGenerator, repeat_samples
 from eval_framework.result_processors.base import ResultProcessor
 from eval_framework.result_processors.result_processor import ResultsFileProcessor
-from eval_framework.shared.types import Completion, RawCompletion
+from eval_framework.shared.types import BaseMetricContext, Completion, Loglikelihood, RawCompletion
 from eval_framework.tasks.eval_config import EvalConfig
 from eval_framework.tasks.registry import Registry
-from template_formatting.formatter import Message, Role
+from eval_framework.tasks.task_style import ClozeStyle
+from template_formatting.formatter import BaseFormatter, Message, Role
+from tests.tests_eval_framework.benchmarks.utils import DatasetStub
 from tests.tests_eval_framework.conftest import MockLLM
 
 
@@ -28,8 +32,9 @@ def test_generate_completions_message_handling() -> None:
     generator = ResponseGenerator(llm, config, result_processor)
 
     # Test case 1: With assistant cue message
-    sample_with_cue = Sample(
-        id=0,
+    sample_with_cue = ResultCandidate(
+        sample_id=0,
+        result_id=0,
         messages=[Message(role=Role.USER, content="Hello"), Message(role=Role.ASSISTANT, content="Cue: ")],
         ground_truth="Expected response",
         subject="no subject",
@@ -37,8 +42,9 @@ def test_generate_completions_message_handling() -> None:
     )
 
     # Test case 2: Without assistant cue message
-    sample_without_cue = Sample(
-        id=1,
+    sample_without_cue = ResultCandidate(
+        sample_id=1,
+        result_id=1,
         messages=[Message(role=Role.USER, content="Hello")],
         ground_truth="Expected response",
         subject="no subject",
@@ -211,13 +217,19 @@ class _PrecedenceStub(Eval, Benchmark):
     def metrics(self) -> list:
         return []
 
-    def subjects(self) -> list:
+    def subjects(self, tokens: list[str] | None = None) -> list[str]:
         return ["stub"]
 
-    def create(self, num_fewshot, custom_subjects, custom_hf_revision, seed=None) -> Eval:
+    def create(
+        self,
+        num_fewshot: int,
+        custom_subjects: list[str] | None,
+        custom_hf_revision: str | None,
+        seed: int | None = None,
+    ) -> Eval:
         return self
 
-    def markdown_doc(self, formatters) -> str:
+    def markdown_doc(self, formatters: Sequence[BaseFormatter]) -> str:
         return ""
 
     # Eval side.
@@ -245,12 +257,19 @@ class _PrecedenceStub(Eval, Benchmark):
             possible_completions=None,
         )
 
-    def generate_completions(self, llm, samples, stop_sequences=None, max_tokens=None) -> list[Completion]:
+    def generate_completions(
+        self,
+        llm: BaseLLM,
+        samples: list[ResultCandidate],
+        stop_sequences: list[str] | None = None,
+        max_tokens: int | None = None,
+    ) -> list[Completion]:
         self.called_stop_sequences = stop_sequences
         self.called_max_tokens = max_tokens
         return [
             Completion(
-                id=0,
+                sample_id=0,
+                result_id=0,
                 subject="stub",
                 ground_truth="A",
                 messages=[Message(role=Role.ASSISTANT, content="c")],
@@ -412,10 +431,11 @@ def test_response_generator_repeats_with_intermediate_results_writes_unique_ids(
     responses = generator.generate()
     assert len(responses) == repeats
 
-    # Re-loading should not treat the file as corrupted (duplicate (id, subject) pairs).
+    # Re-loading should not treat the file as corrupted (duplicate (result_id, subject) pairs).
     loaded = result_processor.load_responses()
     assert len(loaded) == repeats
-    assert len({(r.id, r.subject) for r in loaded}) == repeats
+    assert len({(r.result_id, r.subject) for r in loaded}) == repeats
+    assert {r.sample_id for r in loaded} == {0}  # all repeats share the one input problem
 
 
 def test_repeat_samples() -> None:
@@ -430,7 +450,8 @@ def test_repeat_samples() -> None:
     ]
     repeated = list(repeat_samples(samples, 3))
     assert len(repeated) == 3
-    assert [r.id for r in repeated] == [0, 1, 2]
+    assert [r.sample_id for r in repeated] == [0, 0, 0]
+    assert [r.result_id for r in repeated] == [0, 1, 2]
     for other in repeated[1:]:
         assert other.subject == repeated[0].subject
         assert other.ground_truth == repeated[0].ground_truth
@@ -483,3 +504,36 @@ class NoopResultProcessor(ResultProcessor):
     def save_aggregated_results(self, result: dict) -> None: ...
     def load_metrics_results(self) -> list:
         return []
+
+
+class _ItemContext(BaseMetricContext):
+    item_id: str
+
+
+def test_loglikelihood_response_carries_the_samples_context(tmp_path: Path) -> None:
+    # A loglikelihood metric reads per-item data from response.context, just as a generation metric does.
+    context = _ItemContext(item_id="q-1")
+
+    class _Reader(ChoiceReader):
+        def read(self, item: dict[str, Any]) -> ChoiceFields:
+            return ChoiceFields(raw_question=item["q"], choices=["x", "y"], correct_index=0)
+
+    benchmark = ComposedBenchmark.choice(
+        id="ContextChoiceStub",
+        reader=_Reader(),
+        styler=ClozeStyle(),
+        sample_split="test",
+        fewshot_split="test",
+        dataset_policy=DatasetStub({"test": [{"q": "eval"}]}),
+        context=lambda item: context,
+    )
+    registry = Registry()
+    registry.add(benchmark)
+    llm = MockLLM()
+    config = EvalConfig(task_name=benchmark.id(), num_fewshot=0, num_samples=1, llm_class=llm.__class__)
+    generator = ResponseGenerator(llm, config, ResultsFileProcessor(tmp_path), benchmark_registry=registry)
+
+    [response] = generator.generate()
+
+    assert isinstance(response, Loglikelihood)
+    assert response.context == context

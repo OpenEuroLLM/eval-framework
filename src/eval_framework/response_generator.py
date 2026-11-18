@@ -8,7 +8,7 @@ from typing import Any
 from tqdm import tqdm
 
 from eval_framework import __version__ as eval_framework_version
-from eval_framework.contract import Benchmark, ResponseType, Sample
+from eval_framework.contract import Benchmark, ResponseType, ResultCandidate, Sample
 from eval_framework.llm.base import BaseLLM
 from eval_framework.metrics.llm.base import BaseLLMJudgeMetric
 from eval_framework.result_processors.result_processor import ResultsFileProcessor
@@ -65,13 +65,6 @@ class ResponseGenerator:
         self.response_type = self.task.get_response_type()
 
     def _llm_task_param_precedence(self) -> tuple[list[str] | None, int | None]:
-        """
-        sets the stop_sequences and max_tokens values to be used in the completion generation.
-        Max token and stop sequence values have an order of precedence:
-
-        LLM attributes take precedence over task attributes, and therefore overload them.
-        :return: stop_sequences, max_tokens
-        """
         llm_stop_sequences = getattr(self.llm, "stop_sequences", None)
         llm_max_tokens = getattr(self.llm, "max_tokens", None)
         task_stop_sequences = self.task.get_stop_sequences()
@@ -88,12 +81,7 @@ class ResponseGenerator:
         logger.info(f"Set stop_sequences to {stop_sequences}")
         return stop_sequences, max_tokens
 
-    def _generate_loglikelihoods(self, samples: list[Sample]) -> list[Loglikelihood]:
-        """
-        Generate log likelihoods when a sample is run against the model.
-        :param sample: sample to run the task against
-        :return: loglikelihoods
-        """
+    def _generate_loglikelihoods(self, samples: list[ResultCandidate]) -> list[Loglikelihood]:
         raw_loglikelihoods: list[RawLoglikelihood]
         raw_loglikelihoods = self.llm.logprobs(samples)
 
@@ -103,7 +91,8 @@ class ResponseGenerator:
             assert sample.ground_truth is not None
             loglikelihood_list.append(
                 Loglikelihood(
-                    id=sample.id,
+                    sample_id=sample.sample_id,
+                    result_id=sample.result_id,
                     subject=sample.subject,
                     ground_truth=sample.ground_truth,
                     prompt=raw_loglikelihood.prompt,
@@ -112,17 +101,14 @@ class ResponseGenerator:
                     loglikelihoods=raw_loglikelihood.loglikelihoods,
                     loglikelihoods_num_tokens=raw_loglikelihood.loglikelihoods_num_tokens,
                     loglikelihoods_per_token=raw_loglikelihood.loglikelihoods_per_token,
+                    context=sample.context,
                 )
             )
         return loglikelihood_list
 
     def _generative_output_type_selector(
         self,
-    ) -> Callable[[list[Sample]], list[Completion] | list[Loglikelihood]]:
-        """
-        Selects the generative output type based on the response type.
-        :return: function to generate responses
-        """
+    ) -> Callable[[list[ResultCandidate]], list[Completion] | list[Loglikelihood]]:
         match self.response_type:
             case ResponseType.COMPLETION:
                 stop_sequences, max_tokens = self._llm_task_param_precedence()
@@ -138,7 +124,6 @@ class ResponseGenerator:
                 raise KeyError(f"Task type {self.task} not supported")
 
     def _run_task_against_model(self) -> list[Completion | Loglikelihood]:
-        """Runs the task against the model and generates responses."""
         logger.info(f"{RED}[ Running task {self.task.display_name()} against model ------------ ]{RESET}")
         self.start_time, monotonic_start = time.time(), time.monotonic()
         run_fn = self._generative_output_type_selector()
@@ -154,16 +139,11 @@ class ResponseGenerator:
         return responses
 
     def _map_subject_response_ids(self, responses: list[Completion | Loglikelihood]) -> dict[str, set[int]]:
-        """
-        Maps subject to response id
-        :param responses: list of responses
-        :return: mapping of subject to response id
-        """
         subject_response_id_mapping = {}
         if responses:
             response_subjects = {resp.subject for resp in responses}
             subject_response_id_mapping = {
-                response_subject: set([resp.id for resp in responses if resp.subject == response_subject])
+                response_subject: set([resp.result_id for resp in responses if resp.subject == response_subject])
                 for response_subject in response_subjects
             }
 
@@ -173,18 +153,10 @@ class ResponseGenerator:
         self,
         responses: list[Completion | Loglikelihood],
         subject_response_id_mapping: dict[str, set[int]],
-        generative_output_function: Callable[[list[Sample]], list[Completion] | list[Loglikelihood]],
+        generative_output_function: Callable[[list[ResultCandidate]], list[Completion] | list[Loglikelihood]],
     ) -> list[Completion | Loglikelihood]:
-        """
-        Generates responses for the task and saves them along with metadata.
-        :param responses: list of responses
-        :param subject_response_id_mapping: mapping of subject to response id
-        :param generative_output_function: function to generate responses
-        :param metadata: metadata dictionary
-        :return: all responses
-        """
 
-        def _process_batch(samples_batch: list[Sample]) -> None:
+        def _process_batch(samples_batch: list[ResultCandidate]) -> None:
             if not samples_batch:
                 return
             if len(samples_batch) > 1:
@@ -210,7 +182,7 @@ class ResponseGenerator:
         else:
             total_num_samples = self.num_samples * repeats
 
-        samples_batch: list[Sample] = []
+        samples_batch: list[ResultCandidate] = []
         with tqdm(
             total=total_num_samples,
             desc=f"Processing {self.response_type.value}",
@@ -221,7 +193,7 @@ class ResponseGenerator:
                 subject = f" - Subject: {sample.subject}"
                 sample_index = i + 1
 
-                if sample.id in subject_response_id_mapping.get(sample.subject, []):
+                if sample.result_id in subject_response_id_mapping.get(sample.subject, []):
                     logger.info(
                         f"Task: {self.response_type.value}{subject} - Sample: {sample_index} - skipping, already done."
                     )
@@ -245,7 +217,6 @@ class ResponseGenerator:
         return responses
 
     def _get_metadata(self) -> dict[str, Any]:
-        """Prepares metadata dictionary from the configuration."""
         all_metrics = getattr(self.task, "METRICS", None)
         metadata = self.config.model_dump(mode="json")
         metadata["llm_name"] = self.llm.name
@@ -295,15 +266,16 @@ class ResponseGenerator:
         return responses
 
 
-def repeat_samples(samples: Iterable[Sample], repeats: int) -> Iterable[Sample]:
-    """Flatten repeats into a single stream of samples.
-
-    After expansion original sample indices do not point to the same sample anymore. They
-    Original sample can be recovered by `original_index = expanded_index // repeats`.
-    """
+def repeat_samples(samples: Iterable[Sample], repeats: int) -> Iterable[ResultCandidate]:
     for sample in samples:
         base_id = sample.id * repeats
         for repeat_idx in range(repeats):
-            repeated_sample = sample.model_copy()
-            repeated_sample.id = base_id + repeat_idx
-            yield repeated_sample
+            yield ResultCandidate(
+                sample_id=sample.id,
+                result_id=base_id + repeat_idx,
+                subject=sample.subject,
+                messages=sample.messages,
+                ground_truth=sample.ground_truth,
+                possible_completions=sample.possible_completions,
+                context=sample.context,
+            )
