@@ -1,11 +1,11 @@
 import logging
 import random
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterator, Sequence
 from typing import TYPE_CHECKING, Any, Self, final, override
 
 from eval_framework.answer import AnswerPolicy, PickFromCandidates
 from eval_framework.choices import ChoiceReader
-from eval_framework.contract import Benchmark, Eval, ResponseType, ResultCandidate, Sample
+from eval_framework.contract import Benchmark, Eval, ResponseType, ResultCandidate
 from eval_framework.eval_kind import Choice, EvalKind, ItemContext
 from eval_framework.fewshot import ChoiceRenderer, FewShot, FewShotGenerator, FewShotPolicy, FewShotSplit, SampleSplit
 from eval_framework.shared.types import Completion, RawCompletion
@@ -61,7 +61,7 @@ class ComposedEval(Eval):
         return sample_rows
 
     @override
-    def iterate_samples(self, num_samples: int | None = None) -> Iterable[Sample]:
+    def iterate_result_candidates(self, num_samples: int | None, *, repeats: int) -> Iterator[ResultCandidate]:
         for subject in self._subjects:
             sample_rows = self._load_dataset(subject.load_key)
             assert len(sample_rows) > 0
@@ -74,15 +74,18 @@ class ComposedEval(Eval):
                 # Draw the few-shot demonstrations once per item, shared across the item's samples.
                 fewshot = self._fewshot.for_item(item, self.rnd)
                 for sample_body in self._kind.samples(item):
-                    yield Sample(
-                        id=sample_id,
-                        subject=subject.label,
-                        messages=self._kind.messages(sample_body, fewshot=fewshot, subject_label=subject.label),
-                        ground_truth=sample_body.ground_truth,
-                        # An empty candidate list means free-form generation (no candidates to score).
-                        possible_completions=sample_body.possible_completions or None,
-                        context=sample_body.context,
-                    )
+                    messages = self._kind.messages(sample_body, fewshot=fewshot, subject_label=subject.label)
+                    for repeat_idx in range(repeats):
+                        yield ResultCandidate(
+                            sample_id=sample_id,
+                            result_id=sample_id * repeats + repeat_idx,
+                            subject=subject.label,
+                            messages=messages,
+                            ground_truth=sample_body.ground_truth,
+                            # An empty candidate list means free-form generation (no candidates to score).
+                            possible_completions=sample_body.possible_completions or None,
+                            context=sample_body.context,
+                        )
                     sample_id += 1
                     if sample_id == num_samples:
                         done = True
@@ -332,7 +335,7 @@ class ComposedBenchmark(Benchmark):
             loader=loader,
             rnd=random.Random(RANDOM_SEED),
         )
-        sample = next(iter(instance.iterate_samples(1)))
+        sample = next(iter(instance.iterate_result_candidates(1, repeats=1)))
         loaded = loader.load(subjects[0].load_key)
         split_sizes = {self.sample_split: len(loaded[self.sample_split])}
         if doc.split is not None and doc.split != self.sample_split:

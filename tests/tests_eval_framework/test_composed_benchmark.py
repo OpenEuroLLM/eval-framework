@@ -347,7 +347,7 @@ def test_message_sampling() -> None:
     task = _make_eval(reader=_Reader(), styler=_Styler(), loader=_Loader())
 
     # When iterating samples, then the instruction is the evaluated USER turn and the cue the ASSISTANT turn
-    [sample] = list(task.iterate_samples())
+    [sample] = list(task.iterate_result_candidates(None, repeats=1))
     assert sample.messages == [
         Message(role=Role.USER, content="instruction: the goal"),
         Message(role=Role.ASSISTANT, content="the cue"),
@@ -369,11 +369,40 @@ def test_num_samples_caps_per_subject_not_in_total() -> None:
     task = _make_eval(loader=_Loader(), subjects=subjects)
 
     # When capping at two samples
-    samples = list(task.iterate_samples(num_samples=2))
+    samples = list(task.iterate_result_candidates(num_samples=2, repeats=1))
 
     # Then num_samples caps per subject: two from each; ids restart at 0 per subject
     assert [sample.subject for sample in samples] == ["a", "a", "b", "b"]
-    assert [sample.id for sample in samples] == [0, 1, 0, 1]
+    assert [sample.sample_id for sample in samples] == [0, 1, 0, 1]
+
+
+def test_result_candidates_repeat_each_sample_consecutively_with_per_subject_ids() -> None:
+    # Given an eval over two subjects, each served three items,
+    class _Loader(DatasetLoader):
+        @override
+        def load(self, name: str | None) -> DatasetDict:
+            return DatasetDict({_DUMMY_SPLIT: Dataset.from_list([{"q": 1}, {"q": 2}, {"q": 3}])})
+
+        @override
+        def metadata(self) -> dict[str, str]:
+            return {}
+
+    subjects = (Subject(load_key="a", label="a"), Subject(load_key="b", label="b"))
+    task = _make_eval(loader=_Loader(), subjects=subjects)
+
+    # When capping at two samples, each repeated three times
+    candidates = list(task.iterate_result_candidates(2, repeats=3))
+
+    # Then the cap counts samples, not candidates; repeats of a sample are consecutive, share its sample_id
+    # and are told apart by result_id; both ids restart at 0 per subject
+    assert [c.subject for c in candidates] == ["a"] * 6 + ["b"] * 6
+    assert [c.sample_id for c in candidates] == [0, 0, 0, 1, 1, 1] * 2
+    assert [c.result_id for c in candidates] == [0, 1, 2, 3, 4, 5] * 2
+    # and every repeat carries its sample's prompt and ground truth unchanged
+    samples = list(task.iterate_result_candidates(2, repeats=1))
+    for candidate in candidates:
+        [sample] = [s for s in samples if (s.subject, s.sample_id) == (candidate.subject, candidate.sample_id)]
+        assert (candidate.messages, candidate.ground_truth) == (sample.messages, sample.ground_truth)
 
 
 def test_initial_prompt_is_prepended_once_before_the_first_fewshot_example() -> None:

@@ -1,6 +1,6 @@
 import logging
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import partial
 from typing import Any
@@ -8,7 +8,7 @@ from typing import Any
 from tqdm import tqdm
 
 from eval_framework import __version__ as eval_framework_version
-from eval_framework.contract import Benchmark, ResponseType, ResultCandidate, Sample
+from eval_framework.contract import Benchmark, ResponseType, ResultCandidate
 from eval_framework.llm.base import BaseLLM
 from eval_framework.metrics.llm.base import BaseLLMJudgeMetric
 from eval_framework.result_processors.result_processor import ResultsFileProcessor
@@ -178,7 +178,7 @@ class ResponseGenerator:
         # Calculate total samples for progress bar - use num_samples or iterate to count
         if self.num_samples is None:
             # Count samples by iterating (this might be expensive for large datasets)
-            total_num_samples = sum(1 for _ in self.task.iterate_samples(None)) * repeats
+            total_num_samples = sum(1 for _ in self.task.iterate_result_candidates(None, repeats=repeats))
         else:
             total_num_samples = self.num_samples * repeats
 
@@ -188,8 +188,7 @@ class ResponseGenerator:
             desc=f"Processing {self.response_type.value}",
             disable=get_disable_bar_flag(),
         ) as pbar:
-            samples = self.task.iterate_samples(self.num_samples)
-            for i, sample in enumerate(repeat_samples(samples, repeats)):
+            for i, sample in enumerate(self.task.iterate_result_candidates(self.num_samples, repeats=repeats)):
                 subject = f" - Subject: {sample.subject}"
                 sample_index = i + 1
 
@@ -264,18 +263,3 @@ class ResponseGenerator:
         logger.info("Completions generated and saved.")
 
         return responses
-
-
-def repeat_samples(samples: Iterable[Sample], repeats: int) -> Iterable[ResultCandidate]:
-    for sample in samples:
-        base_id = sample.id * repeats
-        for repeat_idx in range(repeats):
-            yield ResultCandidate(
-                sample_id=sample.id,
-                result_id=base_id + repeat_idx,
-                subject=sample.subject,
-                messages=sample.messages,
-                ground_truth=sample.ground_truth,
-                possible_completions=sample.possible_completions,
-                context=sample.context,
-            )
