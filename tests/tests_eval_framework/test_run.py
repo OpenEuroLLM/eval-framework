@@ -1,14 +1,24 @@
 import glob
 import importlib.metadata
 from argparse import Namespace
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
 
 from eval_framework.llm.openai import OpenAIModel
-from eval_framework.run import _build_config, run
+from eval_framework.run import _build_config, run, run_with_kwargs
+from eval_framework.utils.llama_server import LLAMA_SERVER_BASE_URL
 from tests.tests_eval_framework.conftest import MockLLM
+
+
+@pytest.fixture(autouse=True)
+def llama_server() -> Iterator[Mock]:
+    """No test may launch a real llama-server."""
+    with patch("eval_framework.run.llama_server") as mock:
+        yield mock
 
 
 class NamedMockLLM(MockLLM):
@@ -40,7 +50,6 @@ def _namespace(tmp_path: Path, task_name: str, judge_model_args: list[str]) -> N
         extra_tasks_dir=None,
         save_logs=True,
         delete_output_dir_after_upload=False,
-        randomize_judge_order=False,
         repeats=1,
         task_suite=None,
     )
@@ -112,3 +121,43 @@ def test_build_config_requires_model_names(
 ) -> None:
     with pytest.raises(ValueError, match=match):
         _build_config(_kwargs(llm_args, judge_model_args))
+
+
+def test_run_with_kwargs_stays_remote_without_self_host_flag(llama_server: Mock) -> None:
+    with patch("eval_framework.run._run_single_task") as run_single_task:
+        run_with_kwargs({"llm_args": {"model_name": "m"}})
+
+    assert run_single_task.call_args.args[0] == {"llm_args": {"model_name": "m"}}
+    llama_server.assert_not_called()
+
+
+def test_run_with_kwargs_self_host_flag_starts_and_stops_the_server(llama_server: Mock) -> None:
+    with patch("eval_framework.run._run_single_task") as run_single_task:
+        run_with_kwargs({"llm_args": {"model_name": "org/model-GGUF"}, "self_host": True, "output_dir": "out"})
+
+    assert run_single_task.call_args.args[0]["llm_args"] == {
+        "model_name": "org/model-GGUF",
+        "base_url": LLAMA_SERVER_BASE_URL,
+        "api_key": "no-key",
+    }
+    assert "self_host" not in run_single_task.call_args.args[0]
+    llama_server.assert_called_once_with("org/model-GGUF", Path("out"))
+    llama_server.return_value.__enter__.assert_called_once()
+    llama_server.return_value.__exit__.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"llm_args": {}},
+        {"llm_args": {"model_name": "m", "base_url": "http://other/v1"}},
+        {"llm_args": {"model_name": "m"}, "task_suite": "suite.yaml"},
+    ],
+)
+def test_run_with_kwargs_self_host_flag_rejects_conflicting_arguments(
+    llama_server: Mock, kwargs: dict[str, Any]
+) -> None:
+    with pytest.raises(ValueError, match="--self-host"):
+        run_with_kwargs({**kwargs, "self_host": True})
+
+    llama_server.assert_not_called()

@@ -1,6 +1,7 @@
 import argparse
 import datetime
 import logging
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,7 @@ from eval_framework.main import main
 from eval_framework.tasks.eval_config import EvalConfig
 from eval_framework.tasks.task_loader import load_extra_tasks
 from eval_framework.tasks.utils import close_pools
+from eval_framework.utils.llama_server import LLAMA_SERVER_BASE_URL, llama_server
 from eval_framework.utils.logging import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -30,6 +32,12 @@ def parse_args() -> argparse.Namespace:
         default=(),
         required=False,
         help="The arguments to pass to the LLM as key=value pairs.",
+    )
+    parser.add_argument(
+        "--self-host",
+        action="store_true",
+        help="Serve `model_name` (a Hugging Face GGUF repo) with llama.cpp's llama-server for this run. "
+        "No API key is needed.",
     )
     parser.add_argument(
         "--num-samples", type=int, required=False, help="The number of samples per subject to evaluate."
@@ -61,12 +69,6 @@ def parse_args() -> argparse.Namespace:
             "Mutually exclusive with --task-name. Runs all tasks defined in the suite."
         ),
     )
-    parser.add_argument(
-        "--randomize-judge-order",
-        action="store_true",
-        help="Randomize the order of answers presented to the LLM judge to mitigate position bias.",
-    )
-
     parser.add_argument(
         "--task-subjects",
         type=str,
@@ -258,7 +260,6 @@ def _build_config(kwargs: dict) -> EvalConfig:
         judge_model_args=judge_model_args,
         batch_size=kwargs["batch_size"],
         description=kwargs["description"],
-        randomize_judge_order=kwargs["randomize_judge_order"],
         delete_output_dir_after_upload=kwargs["delete_output_dir_after_upload"],
         repeats=kwargs["repeats"],
     )
@@ -285,22 +286,36 @@ def _run_single_task(kwargs: dict) -> None:
 
 
 def run_with_kwargs(kwargs: dict) -> None:
+    # Without --self-host there is no server to manage.
+    server: AbstractContextManager = nullcontext()
+    if kwargs.pop("self_host", False):
+        llm_args = kwargs.get("llm_args", {})
+        if "model_name" not in llm_args or "base_url" in llm_args:
+            raise ValueError("--self-host needs `model_name` in --llm-args and cannot be combined with `base_url`.")
+        # A suite can override `model_name` or `base_url` per task, so results could be recorded
+        # under a model other than the one served here.
+        if kwargs.get("task_suite") is not None:
+            raise ValueError("--self-host cannot be combined with --task-suite.")
+        # llama-server needs no key, but the OpenAI SDK rejects an empty one.
+        kwargs["llm_args"] = {"api_key": "no-key", **llm_args, "base_url": LLAMA_SERVER_BASE_URL}
+        server = llama_server(llm_args["model_name"], Path(kwargs.get("output_dir", "outputs")))
     task_suite_path = kwargs.pop("task_suite", None)
 
     try:
-        if task_suite_path is not None:
-            from eval_framework.suite import TaskSuite, run_suite
+        with server:
+            if task_suite_path is not None:
+                from eval_framework.suite import TaskSuite, run_suite
 
-            output_dir = kwargs.get("output_dir", "outputs")
-            log_level = kwargs.get("verbosity", 1)
-            setup_logging(output_dir, log_level=log_level)
+                output_dir = kwargs.get("output_dir", "outputs")
+                log_level = kwargs.get("verbosity", 1)
+                setup_logging(output_dir, log_level=log_level)
 
-            suite = TaskSuite.load(task_suite_path)
-            logger.info(f"Loaded task suite '{suite.name}' from {task_suite_path}")
-            result = run_suite(suite, kwargs)
-            logger.info(f"Suite '{suite.name}' completed. Aggregates: {result.aggregates}")
-        else:
-            _run_single_task(kwargs)
+                suite = TaskSuite.load(task_suite_path)
+                logger.info(f"Loaded task suite '{suite.name}' from {task_suite_path}")
+                result = run_suite(suite, kwargs)
+                logger.info(f"Suite '{suite.name}' completed. Aggregates: {result.aggregates}")
+            else:
+                _run_single_task(kwargs)
     finally:
         close_pools()
 

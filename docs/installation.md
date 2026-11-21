@@ -26,10 +26,9 @@ The example below talks to the OpenAI API and needs `OPENAI_API_KEY` to be set. 
 ```bash
 uv run eval_framework \
     --llm-args model_name="gpt-4o-mini" \
-    --task-name "MMLU" \
+    --task-name "MMLU_COT" \
     --task-subjects "abstract_algebra" "anatomy" \
     --output-dir ./eval_results \
-    --num-fewshot 5 \
     --num-samples 10
 ```
 
@@ -85,26 +84,21 @@ docker build -f src/eval_framework/tasks/Dockerfile_codebench -t eval-framework-
 
 ## PyPI installation
 
-It is also possible to download Eval-Framework through pip:
+Eval-Framework is also published on PyPI. Install it as a command-line tool with uv:
 
 ```bash
-pip install eval-framework
+uv tool install eval-framework
 ```
 
-However, we recommend using the uv solver to avoid many dependency version issues, so:
+To use it from your own Python project instead, add it with `uv add eval-framework`.
 
-```bash
-uv pip install eval-framework
-```
-
-This allows you to run an evaluation without going through `uv run`:
+Installed as a tool, you can run an evaluation without going through `uv run`:
 
 ```bash
 eval_framework \
     --llm-args model_name="gpt-4o-mini" \
-    --task-name "MMLU" \
+    --task-name "MMLU_COT" \
     --task-subjects "abstract_algebra" "anatomy" \
     --output-dir ./eval_results \
-    --num-fewshot 5 \
     --num-samples 10
 ```

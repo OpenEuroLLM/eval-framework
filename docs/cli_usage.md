@@ -18,6 +18,9 @@ include `model_name` (e.g. `--llm-args model_name="gpt-4o-mini" base_url="http:/
 **`--llm-args [LLM_ARGS ...]`**
 Arguments to pass to the `OpenAIModel` constructor as key=value pairs. `model_name` is required.
 
+**`--self-host`**
+Serve `model_name` with llama.cpp for this run; see "Self-hosted model" below. No API key is needed.
+
 **`--task-name TASK_NAME`**
 The name of the task to evaluate.
 
@@ -88,15 +91,28 @@ Any model served through an OpenAI-compatible API (the OpenAI API itself, vLLM, 
 ```bash
 uv run eval_framework \
     --llm-args model_name="Qwen/Qwen3-0.6B" base_url="http://localhost:8000/v1" \
-    --task-name "MMLU" \
+    --task-name "MMLU_COT" \
     --task-subjects "abstract_algebra" \
     --output-dir ./eval_results \
-    --num-fewshot 5 \
     --num-samples 10
 ```
 
 Every keyword argument of the `OpenAIModel` constructor can be set through `--llm-args`; see the
 [Model Arguments guide](model_arguments.md) for the full list.
+
+### Self-hosted model (`--self-host`)
+
+With `--self-host`, the CLI serves the model itself with [llama.cpp](https://github.com/ggml-org/llama.cpp) and no API key
+is needed. It runs `llama-server -hf <model_name>` on port 8080, so `model_name` must be a Hugging Face GGUF repository
+(e.g. `Qwen/Qwen3-0.6B-GGUF`).
+
+* The server is stopped when the run ends, and its log is written to `<output-dir>/llama-server.log`.
+* `llama-server` must be on the `PATH` (`brew install llama.cpp`).
+* Port 8080 must be free. To use a server you started yourself, drop `--self-host` and pass `base_url=...` instead.
+* It cannot be combined with `--task-suite`, because a suite can set its own model per task.
+
+Ctrl-C stops the started server as well. If the run is terminated with SIGTERM instead (e.g. `kill`, or a cancelled
+cluster job), the server may keep running; check with `pgrep llama-server`.
 
 ## Running a Task Suite
 
