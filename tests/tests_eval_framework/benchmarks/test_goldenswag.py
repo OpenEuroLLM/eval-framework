@@ -10,7 +10,13 @@ from typing import Any
 
 import pytest
 
-from eval_framework.benchmarks.goldenswag import _IDK_PREAMBLE, GOLDENSWAG_BENCHMARKS, goldenswag, goldenswag_idk
+from eval_framework.benchmarks.goldenswag import (
+    _IDK_PREAMBLE,
+    GOLDENSWAG_BENCHMARKS,
+    goldenswag,
+    goldenswag_bpb,
+    goldenswag_idk,
+)
 from eval_framework.contract import Benchmark
 from template_formatting.formatter import (
     BaseFormatter,
@@ -42,6 +48,17 @@ _EVAL_ROW: dict[str, Any] = {
     "label": "0",
 }
 
+_FEWSHOT_ROW: dict[str, Any] = {
+    "activity_label": "Making tea",
+    "ctx_a": "A man places a kettle of water on the stove.",
+    "ctx_b": "he",
+    "endings": [
+        "puts the kettle in the freezer to warm it up.",
+        "waits for it to boil, then pours it over a tea bag.",
+    ],
+    "label": "1",
+}
+
 _QUESTION = "Cleaning windows: A woman stands at a tall window holding a spray bottle and a cloth. She"
 _ENDINGS = [
     " sprays the glass and wipes it until it is clear.",
@@ -58,6 +75,34 @@ def test_goldenswag_zeroshot_prompt() -> None:
     assert sample.messages == [Message(role=Role.USER, content=_QUESTION)]
     assert sample.ground_truth == _ENDINGS[0]
     assert sample.possible_completions == _ENDINGS
+
+
+def test_goldenswag_bpb_scores_only_the_gold_ending() -> None:
+    # Given the BPB benchmark over one fictional row
+    benchmark = goldenswag_bpb(dataset=DatasetStub({"validation": [_EVAL_ROW]}))
+    # When we assemble its first sample (zero-shot)
+    sample = first_sample(benchmark, num_fewshot=0)
+    # Then the prompt is the cloze one, but only the gold ending is scored
+    assert sample.messages == [Message(role=Role.USER, content=_QUESTION)]
+    assert sample.ground_truth == _ENDINGS[0]
+    assert sample.possible_completions == [_ENDINGS[0]]
+
+
+def test_goldenswag_bpb_oneshot_prompt() -> None:
+    # Given the BPB benchmark with a fewshot row and the eval row, both in the validation split (GoldenSwag draws
+    # its fewshots from the same split it evaluates on; the eval item itself is never its own demonstration)
+    benchmark = goldenswag_bpb(dataset=DatasetStub({"validation": [_FEWSHOT_ROW, _EVAL_ROW]}))
+    # When we assemble its first sample (one-shot)
+    sample = first_sample(benchmark, num_fewshot=1)
+    # Then the fewshot context is continued with its gold ending, followed by the eval context; only the eval
+    # row's gold ending is scored
+    assert sample.messages == [
+        Message(role=Role.USER, content="Making tea: A man places a kettle of water on the stove. He"),
+        Message(role=Role.ASSISTANT, content=" waits for it to boil, then pours it over a tea bag."),
+        Message(role=Role.USER, content=_QUESTION),
+    ]
+    assert sample.ground_truth == _ENDINGS[0]
+    assert sample.possible_completions == [_ENDINGS[0]]
 
 
 def test_goldenswag_idk_prepends_preamble_and_scores_an_abstention_option() -> None:

@@ -18,6 +18,7 @@ from eval_framework.benchmarks.mmlu import (
     _MMLU_COT_ANSWER_RE,
     MMLU_BENCHMARKS,
     mmlu,
+    mmlu_bpb,
     mmlu_cot,
     mmlu_full_text,
     mmlu_idk,
@@ -103,6 +104,42 @@ def test_mmlu_full_text_prompt() -> None:
     ]
     assert sample.ground_truth == " 4"
     assert sample.possible_completions == [" 3", " 4", " 5", " 6"]
+
+
+def test_mmlu_bpb_prompt() -> None:
+    # BPB: options hidden, the preamble does not claim multiple choice; only the gold answer text is scored.
+    benchmark = mmlu_bpb(dataset=DatasetStub({"test": [_EVAL_ROW]}))
+    sample = first_sample(benchmark, num_fewshot=0)
+    assert sample.messages == [
+        Message(
+            role=Role.USER,
+            content="The following are questions (with answers) about abstract algebra.\n\nQuestion: What is 2 + 2?\n",
+        ),
+        Message(role=Role.ASSISTANT, content="Answer:"),
+    ]
+    assert sample.ground_truth == " 4"
+    assert sample.possible_completions == [" 4"]
+
+
+def test_mmlu_bpb_oneshot_prompt() -> None:
+    # Given the BPB benchmark with a fewshot row (dev split) and the eval row (test split)
+    fewshot_row = {**_EVAL_ROW, "question": "What is 1 + 1?", "choices": ["1", "2", "3", "4"], "answer": 1}
+    benchmark = mmlu_bpb(dataset=DatasetStub({"test": [_EVAL_ROW], "dev": [fewshot_row]}))
+    # When we assemble its first sample (one-shot)
+    sample = first_sample(benchmark, num_fewshot=1)
+    # Then the preamble opens the first (fewshot) turn only, the demonstration answers with the full gold text,
+    # and only the eval row's gold text is scored
+    assert sample.messages == [
+        Message(
+            role=Role.USER,
+            content="The following are questions (with answers) about abstract algebra.\n\nQuestion: What is 1 + 1?\n",
+        ),
+        Message(role=Role.ASSISTANT, content="Answer: 2"),
+        Message(role=Role.USER, content="Question: What is 2 + 2?\n"),
+        Message(role=Role.ASSISTANT, content="Answer:"),
+    ]
+    assert sample.ground_truth == " 4"
+    assert sample.possible_completions == [" 4"]
 
 
 def test_mmlu_idk_prompt() -> None:
